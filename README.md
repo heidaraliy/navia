@@ -70,7 +70,8 @@ Run `go fmt ./...` before committing Go changes.
 
 ## Contributing
 
-See [AGENTS.md](AGENTS.md) for repository guidelines. Keep changes small,
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor workflow and
+[AGENTS.md](AGENTS.md) for agent-specific orchestration. Keep changes small,
 tested, and explicit about filesystem safety.
 
 ## License
