@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch="$(git branch --show-current)"
+if [[ "$branch" == "main" || "$branch" == "master" || -z "$branch" ]]; then
+  echo "error: do not commit feature work from ${branch:-detached HEAD}" >&2
+  exit 1
+fi
