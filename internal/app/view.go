@@ -429,9 +429,7 @@ func (m Model) renderPreview(width int) string {
 		title = filepath.Base(m.selectedPathForStatus())
 	}
 	header := m.styles.Highlight.Render(title)
-	preview := m.previewViewport
-	preview.SetContent(m.renderPreviewContent())
-	content := preview.View()
+	content := m.previewViewport.View()
 	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
 	return panel.Width(width - 2).Height(height).Render(body)
 }
@@ -446,10 +444,82 @@ func (m Model) renderPreviewContent() string {
 		return content
 	}
 	lines := strings.Split(content, "\n")
+	limit := m.previewRenderLineLimit()
+	truncatedLines := false
+	if len(lines) > limit {
+		lines = lines[:limit]
+		truncatedLines = true
+	}
+	truncatedLongLine := false
 	for i, line := range lines {
-		lines[i] = m.syntax.HighlightLine(entry.Path, line)
+		clipped, clippedLine := clipPreviewLine(line, m.previewRenderLineWidth())
+		if clippedLine {
+			truncatedLongLine = true
+		}
+		lines[i] = m.syntax.HighlightLine(entry.Path, clipped)
+	}
+	if truncatedLines || truncatedLongLine {
+		lines = append(lines, "", m.styles.Dim.Render(previewRenderNotice(truncatedLines, truncatedLongLine, limit)))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) previewRenderLineLimit() int {
+	height := m.previewViewport.Height
+	if height <= 0 {
+		height = 24
+	}
+	limit := height * previewRenderOverscanScreens
+	if limit < height {
+		limit = height
+	}
+	if limit > previewRenderMaxLines {
+		limit = previewRenderMaxLines
+	}
+	if limit < 1 {
+		limit = 1
+	}
+	return limit
+}
+
+func (m Model) previewRenderLineWidth() int {
+	width := m.previewViewport.Width
+	if width <= 0 {
+		width = 80
+	}
+	limit := width * previewRenderOverscanScreens
+	if limit < width {
+		limit = width
+	}
+	if limit > previewRenderMaxLineRunes {
+		limit = previewRenderMaxLineRunes
+	}
+	if limit < 80 {
+		limit = 80
+	}
+	return limit
+}
+
+func clipPreviewLine(line string, maxRunes int) (string, bool) {
+	if maxRunes <= 0 {
+		maxRunes = 80
+	}
+	runes := []rune(line)
+	if len(runes) <= maxRunes {
+		return line, false
+	}
+	return string(runes[:maxRunes]) + " ...", true
+}
+
+func previewRenderNotice(lines, longLine bool, limit int) string {
+	switch {
+	case lines && longLine:
+		return fmt.Sprintf("[preview render limited to %d lines and clipped long lines; open in editor for full context]", limit)
+	case lines:
+		return fmt.Sprintf("[preview render limited to %d lines; open in editor for full context]", limit)
+	default:
+		return "[preview clipped long lines; open in editor for full context]"
+	}
 }
 
 func (m Model) renderEditor(width int, buf *editor.Buffer) string {
@@ -574,6 +644,7 @@ func helpContent() string {
 		}),
 		helpSection("Tree", [][2]string{
 			{"up/k, down/j", "move selection"},
+			{"pgup/ctrl+u, pgdown/ctrl+d", "page selection"},
 			{"enter/l", "expand directory or open search result"},
 			{"L / shift+enter", "make selected directory the root"},
 			{"backspace/h", "collapse or jump to parent"},

@@ -669,14 +669,16 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 	out := make([]string, 0, height)
 	for i := start; i < len(b.Lines) && len(out) < height; i++ {
 		prefix := fmt.Sprintf("%*d ", gutterW, i+1)
-		line := renderLine(b.Lines[i], -1, false)
+		lineText, col := visibleLineWindow(b.Lines[i], -1, width, height)
+		line := renderLine(lineText, col, false)
 		if i == b.Row {
-			line = renderLine(b.Lines[i], b.Col, b.Mode == Insert)
+			lineText, col = visibleLineWindow(b.Lines[i], b.Col, width, height)
+			line = renderLine(lineText, col, b.Mode == Insert)
 		}
 		if highlight != nil {
 			line = highlight(b.Path, line)
 		}
-		wrapped := wrapDisplay(prefix+line, strings.Repeat(" ", gutterW+1), width)
+		wrapped := wrapDisplayLimit(prefix+line, strings.Repeat(" ", gutterW+1), width, height-len(out))
 		for _, visual := range wrapped {
 			out = append(out, visual)
 			if len(out) >= height {
@@ -688,6 +690,46 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 		out = append(out, "   ~ ")
 	}
 	return out
+}
+
+func visibleLineWindow(line string, col, width, height int) (string, int) {
+	budget := width * max(1, height)
+	if budget < 400 {
+		budget = 400
+	}
+	if budget > 4000 {
+		budget = 4000
+	}
+	runes := []rune(line)
+	if len(runes) <= budget {
+		return line, col
+	}
+	if col < 0 {
+		return string(runes[:budget]) + " ...", col
+	}
+	if col > len(runes) {
+		col = len(runes)
+	}
+	start := col - budget/2
+	if start < 0 {
+		start = 0
+	}
+	if start+budget > len(runes) {
+		start = len(runes) - budget
+	}
+	if start < 0 {
+		start = 0
+	}
+	end := min(len(runes), start+budget)
+	prefix := ""
+	if start > 0 {
+		prefix = "... "
+	}
+	suffix := ""
+	if end < len(runes) {
+		suffix = " ..."
+	}
+	return prefix + string(runes[start:end]) + suffix, col - start + len([]rune(prefix))
 }
 
 func (b *Buffer) startVisual(mode Mode) {
@@ -1434,6 +1476,10 @@ func tabWidth(displayCol int) int {
 }
 
 func wrapDisplay(s, continuation string, width int) []string {
+	return wrapDisplayLimit(s, continuation, width, 0)
+}
+
+func wrapDisplayLimit(s, continuation string, width, maxLines int) []string {
 	if width <= 0 {
 		return []string{""}
 	}
@@ -1441,6 +1487,9 @@ func wrapDisplay(s, continuation string, width int) []string {
 		wrapped := strings.Split(ansi.Wrap(s, width, ""), "\n")
 		for i := 1; i < len(wrapped); i++ {
 			wrapped[i] = continuation + wrapped[i]
+		}
+		if maxLines > 0 && len(wrapped) > maxLines {
+			return wrapped[:maxLines]
 		}
 		return wrapped
 	}
@@ -1450,7 +1499,7 @@ func wrapDisplay(s, continuation string, width int) []string {
 	}
 	var lines []string
 	first := true
-	for len(runes) > 0 {
+	for len(runes) > 0 && (maxLines <= 0 || len(lines) < maxLines) {
 		prefix := ""
 		if !first {
 			prefix = continuation

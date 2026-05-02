@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type PreviewKind string
@@ -24,20 +25,24 @@ const (
 )
 
 type Preview struct {
-	Kind    PreviewKind
-	Title   string
-	Content string
+	Kind      PreviewKind
+	Title     string
+	Content   string
+	Path      string
+	Size      int64
+	ModTime   time.Time
+	Truncated bool
 }
 
 func BuildPreview(path string, maxBytes int64) Preview {
 	info, err := os.Stat(path)
 	if err != nil {
-		return Preview{Kind: PreviewError, Title: filepath.Base(path), Content: err.Error()}
+		return Preview{Kind: PreviewError, Title: filepath.Base(path), Path: path, Content: err.Error()}
 	}
 	if info.IsDir() {
 		items, err := os.ReadDir(path)
 		if err != nil {
-			return Preview{Kind: PreviewError, Title: info.Name(), Content: err.Error()}
+			return Preview{Kind: PreviewError, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: err.Error()}
 		}
 		dirs, files := 0, 0
 		for _, item := range items {
@@ -47,20 +52,20 @@ func BuildPreview(path string, maxBytes int64) Preview {
 				files++
 			}
 		}
-		return Preview{Kind: PreviewDir, Title: info.Name(), Content: fmt.Sprintf("Directory\n\n%d folders\n%d files", dirs, files)}
+		return Preview{Kind: PreviewDir, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: fmt.Sprintf("Directory\n\n%d folders\n%d files", dirs, files)}
 	}
 	if isImageExt(filepath.Ext(path)) {
-		if preview, ok := imagePreview(path, info.Size()); ok {
+		if preview, ok := imagePreview(path, info.Size(), info.ModTime()); ok {
 			return preview
 		}
 	}
-	return filePreview(path, info.Size(), maxBytes)
+	return filePreview(path, info.Size(), info.ModTime(), maxBytes)
 }
 
-func filePreview(path string, size int64, maxBytes int64) Preview {
+func filePreview(path string, size int64, modTime time.Time, maxBytes int64) Preview {
 	file, err := os.Open(path)
 	if err != nil {
-		return Preview{Kind: PreviewError, Title: filepath.Base(path), Content: err.Error()}
+		return Preview{Kind: PreviewError, Title: filepath.Base(path), Path: path, Size: size, ModTime: modTime, Content: err.Error()}
 	}
 	defer file.Close()
 
@@ -69,24 +74,28 @@ func filePreview(path string, size int64, maxBytes int64) Preview {
 	}
 	data, err := io.ReadAll(io.LimitReader(file, maxBytes))
 	if err != nil {
-		return Preview{Kind: PreviewError, Title: filepath.Base(path), Content: err.Error()}
+		return Preview{Kind: PreviewError, Title: filepath.Base(path), Path: path, Size: size, ModTime: modTime, Content: err.Error()}
 	}
 	if bytes.Contains(data, []byte{0}) {
 		return Preview{
-			Kind:  PreviewBinary,
-			Title: filepath.Base(path),
+			Kind:    PreviewBinary,
+			Title:   filepath.Base(path),
+			Path:    path,
+			Size:    size,
+			ModTime: modTime,
 			Content: fmt.Sprintf("Binary file\n\nSize: %s\nExtension: %s",
 				FormatSize(size), filepath.Ext(path)),
 		}
 	}
 	text := string(data)
-	if size > int64(len(data)) {
+	truncated := size > int64(len(data))
+	if truncated {
 		text += "\n\n[preview truncated]"
 	}
-	return Preview{Kind: PreviewText, Title: filepath.Base(path), Content: text}
+	return Preview{Kind: PreviewText, Title: filepath.Base(path), Path: path, Size: size, ModTime: modTime, Content: text, Truncated: truncated}
 }
 
-func imagePreview(path string, size int64) (Preview, bool) {
+func imagePreview(path string, size int64, modTime time.Time) (Preview, bool) {
 	file, err := os.Open(path)
 	if err != nil {
 		return Preview{}, false
@@ -98,7 +107,7 @@ func imagePreview(path string, size int64) (Preview, bool) {
 	}
 	content := fmt.Sprintf("Image\n\nFormat: %s\nDimensions: %dx%d\nSize: %s\nExtension: %s",
 		format, cfg.Width, cfg.Height, FormatSize(size), filepath.Ext(path))
-	return Preview{Kind: PreviewImage, Title: filepath.Base(path), Content: content}, true
+	return Preview{Kind: PreviewImage, Title: filepath.Base(path), Path: path, Size: size, ModTime: modTime, Content: content}, true
 }
 
 func isImageExt(ext string) bool {
