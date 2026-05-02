@@ -18,10 +18,13 @@ func TestTopHeightIsCompact(t *testing.T) {
 
 func TestHelpIsGroupedByMode(t *testing.T) {
 	help := helpContent()
-	for _, want := range []string{"Global", "Tree", "Diff", "Search", "Editor Normal", "Editor Tabs", "Windows And History", "ctrl+w o", "L / shift+enter"} {
+	for _, want := range []string{"Global", "Tree", "Diff", "Search", "Editor Normal", "Editor Tabs", "Windows And History", "ctrl+w o", "L / shift+enter", "e / c"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help missing %q:\n%s", want, help)
 		}
+	}
+	if strings.Contains(help, "open selected file externally") {
+		t.Fatalf("help still advertises external tree edit:\n%s", help)
 	}
 }
 
