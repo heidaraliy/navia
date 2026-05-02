@@ -10,11 +10,23 @@ shell command hints after file operations.
 
 ## Install
 
+For the latest tagged Go module release:
+
 ```bash
 go install github.com/heidaraliy/navia/cmd/navia@latest
 ```
 
-Until tagged releases exist, clone the repository and run from source:
+For a specific tagged release, replace `v0.1.0` with the version you want:
+
+```bash
+go install github.com/heidaraliy/navia/cmd/navia@v0.1.0
+```
+
+When maintainers push a `v*` tag, the release workflow publishes Linux,
+macOS, and Windows binary archives with SHA-256 checksums on the GitHub release
+page.
+
+To run from source:
 
 ```bash
 git clone https://github.com/heidaraliy/navia.git
@@ -67,6 +79,12 @@ go build ./cmd/navia
 ```
 
 Run `go fmt ./...` before committing Go changes.
+
+## Releases
+
+Maintainers publish a release by pushing a `v*` tag, such as `v0.1.0`. The
+tagged release workflow runs tests, builds archives for supported desktop
+targets, generates checksums, and creates the GitHub release.
 
 ## Contributing
 

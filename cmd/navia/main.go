@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heidaraliy/navia/internal/app"
 	"github.com/heidaraliy/navia/internal/config"
 )
 
-const version = "0.1.0"
+var version = "dev"
 
 func main() {
 	showVersion := flag.Bool("version", false, "show version")
@@ -20,7 +22,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("navia " + version)
+		fmt.Println("navia " + displayVersion())
 		return
 	}
 	if *textSearch != "" && *fileSearch != "" {
@@ -61,4 +63,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "navia: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func displayVersion() string {
+	display := version
+	if display == "" || display == "dev" {
+		if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			display = info.Main.Version
+		}
+	}
+	return strings.TrimPrefix(display, "v")
 }
