@@ -627,11 +627,28 @@ func (m Model) renderFooterKeyBar() string {
 }
 
 func (m Model) renderFooterHint(hint footerHint) string {
-	text := m.styles.FooterKey.Render(hint.key)
+	text := m.footerKeyStyle(hint).Render(hint.key)
 	if hint.label != "" {
-		text += " " + hint.label
+		text += m.styles.FooterTab.Render(" " + hint.label)
 	}
-	return m.styles.FooterTab.Render(text)
+	return text
+}
+
+func (m Model) footerKeyStyle(hint footerHint) lipgloss.Style {
+	color := lipgloss.Color("229")
+	switch hint.key {
+	case "q", "Esc", ":q":
+		color = lipgloss.Color("203")
+	case "?", "auto", ":bl":
+		color = lipgloss.Color("186")
+	case "D", "R", "s", "u":
+		color = lipgloss.Color("176")
+	case "enter/l", "h", ":bn/:bp", "ctrl+o/i":
+		color = lipgloss.Color("111")
+	case "/", "e", ":w", "c", "p", "r", "gd/gr":
+		color = lipgloss.Color("114")
+	}
+	return m.styles.FooterKey.Foreground(color)
 }
 
 func (m Model) footerHints() []footerHint {
