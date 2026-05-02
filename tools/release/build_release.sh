@@ -115,9 +115,27 @@ Navia v$version
 
 Commit: $commit
 
-Install from source with:
+Download the archive for your platform, extract it, and put the navia binary on
+your PATH. Archives are named:
+
+    navia_${version}_<os>_<arch>.tar.gz
+    navia_${version}_windows_<arch>.zip
+
+Example for Apple Silicon Macs:
+
+    tar -xzf navia_${version}_darwin_arm64.tar.gz
+    mkdir -p ~/.local/bin
+    install -m 0755 navia_${version}_darwin_arm64/navia ~/.local/bin/navia
+    navia --version
+
+Use the matching archive name for other platforms: darwin_amd64 for Intel Macs,
+linux_amd64 for most Linux PCs, and linux_arm64 for ARM Linux machines.
+
+For Windows, extract the zip and move navia.exe to a directory on your PATH.
+
+SHA-256 checksums are attached to this release.
+
+Install from source with Go 1.22 or newer:
 
     go install github.com/heidaraliy/navia/cmd/navia@v$version
-
-Binary archives and SHA-256 checksums are attached to this release.
 NOTES
