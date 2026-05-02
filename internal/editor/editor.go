@@ -1601,14 +1601,14 @@ func renderLine(s string, col int, insert bool) string {
 			cursorDrawn = true
 			if r == '\t' {
 				spaces := tabWidth(displayCol)
-				out.WriteRune('█')
+				writeCursorRune(&out, ' ')
 				if spaces > 1 {
 					out.WriteString(strings.Repeat(" ", spaces-1))
 				}
 				displayCol += spaces
 				continue
 			}
-			out.WriteRune('█')
+			writeCursorRune(&out, r)
 			displayCol++
 			continue
 		}
@@ -1657,13 +1657,13 @@ func renderHighlightedLine(s string, col int, insert bool) string {
 			cursorDrawn = true
 			if r == '\t' {
 				spaces := tabWidth(displayCol)
-				out.WriteRune('█')
+				writeCursorRune(&out, ' ')
 				if spaces > 1 {
 					out.WriteString(strings.Repeat(" ", spaces-1))
 				}
 				displayCol += spaces
 			} else {
-				out.WriteRune('█')
+				writeCursorRune(&out, r)
 				displayCol++
 			}
 			sourceByte += size
@@ -1691,6 +1691,12 @@ func renderHighlightedLine(s string, col int, insert bool) string {
 		out.WriteRune('█')
 	}
 	return out.String()
+}
+
+func writeCursorRune(out *strings.Builder, r rune) {
+	out.WriteString("\x1b[7m")
+	out.WriteRune(r)
+	out.WriteString("\x1b[27m")
 }
 
 func tabWidth(displayCol int) int {
