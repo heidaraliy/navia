@@ -114,6 +114,8 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter", "l":
 		m.openSelected()
+	case "L", "shift+enter":
+		m.drillIntoSelectedRoot()
 	case "backspace", "h":
 		m.collapseOrParent()
 	case "/":
@@ -219,12 +221,45 @@ func (m *Model) goParent() {
 	old := m.cwd
 	m.cwd = parent
 	m.filter = ""
+	m.executedSearchQuery = ""
+	m.recursiveRows = nil
+	m.recursiveRoot = ""
 	m.expandedDirs = map[string]bool{parent: true, old: true}
 	if err := m.refresh(); err != nil {
 		m.cwd = old
 		m.expandedDirs = map[string]bool{old: true}
 		m.setError(err)
 	}
+}
+
+func (m *Model) drillIntoSelectedRoot() {
+	entry, ok := m.selected()
+	if !ok {
+		return
+	}
+	if !entry.IsDir {
+		m.statusMessage = "Select a directory to make it the root."
+		return
+	}
+	if entry.Path == m.cwd {
+		m.statusMessage = "Already at `" + entry.Name + "`."
+		return
+	}
+	old := m.cwd
+	m.cwd = entry.Path
+	m.filter = ""
+	m.executedSearchQuery = ""
+	m.recursiveRows = nil
+	m.recursiveRoot = ""
+	m.selectedIndex = 0
+	m.expandedDirs = map[string]bool{m.cwd: true}
+	if err := m.refresh(); err != nil {
+		m.cwd = old
+		m.expandedDirs = map[string]bool{old: true}
+		m.setError(err)
+		return
+	}
+	m.statusMessage = "Rooted at `" + entry.Name + "`."
 }
 
 func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
