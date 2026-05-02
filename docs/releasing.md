@@ -37,7 +37,15 @@ git push origin v0.1.0
 7. Watch the `Tagged Release` workflow in GitHub Actions.
 8. Confirm the GitHub release exists, has archives for Linux, macOS, and
    Windows, and includes `navia_0.1.0_checksums.txt`.
-9. Smoke-test the tagged install:
+9. Smoke-test a downloaded binary archive:
+
+```bash
+tmp="$(mktemp -d)"
+tar -xzf navia_0.1.0_darwin_arm64.tar.gz -C "$tmp"
+"$tmp/navia_0.1.0_darwin_arm64/navia" --version
+```
+
+10. Smoke-test the tagged source install:
 
 ```bash
 go install github.com/heidaraliy/navia/cmd/navia@v0.1.0
