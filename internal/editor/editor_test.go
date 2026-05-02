@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -132,6 +133,19 @@ func TestVisibleExpandsTabsUnderCursor(t *testing.T) {
 	}
 	if got, want := lines[0], `1 █   "os"`; got != want {
 		t.Fatalf("rendered = %q, want %q", got, want)
+	}
+}
+
+func TestVisibleBoundsHugeSingleLineWrapping(t *testing.T) {
+	b := NewScratch("huge.txt")
+	b.Lines = []string{strings.Repeat("x", 20000)}
+	lines := b.Visible(20, 5)
+	if len(lines) != 5 {
+		t.Fatalf("lines = %d, want 5", len(lines))
+	}
+	joined := strings.Join(lines, "\n")
+	if len(joined) > 2000 {
+		t.Fatalf("visible output too large: %d bytes", len(joined))
 	}
 }
 

@@ -113,15 +113,13 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Window command: h tree, l editor, w toggle, o only."
 		}
 	case "up", "k":
-		if m.selectedIndex > 0 {
-			m.selectedIndex--
-			m.refreshPreview()
-		}
+		m.moveSelection(-1)
 	case "down", "j":
-		if m.selectedIndex < len(m.rows)-1 {
-			m.selectedIndex++
-			m.refreshPreview()
-		}
+		m.moveSelection(1)
+	case "pgup", "ctrl+u":
+		m.moveSelection(-m.pageStep())
+	case "pgdown", "ctrl+d":
+		m.moveSelection(m.pageStep())
 	case "enter", "l":
 		m.openSelected()
 	case "L", "shift+enter":
@@ -179,6 +177,26 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enterDiffMode()
 	}
 	return m, nil
+}
+
+func (m *Model) moveSelection(delta int) {
+	if delta == 0 || len(m.rows) == 0 {
+		return
+	}
+	before := m.selectedIndex
+	m.selectedIndex += delta
+	m.clampSelection()
+	if m.selectedIndex != before {
+		m.refreshPreview()
+	}
+}
+
+func (m Model) pageStep() int {
+	height := m.height - m.topHeight() - 4
+	if height < 6 {
+		height = 6
+	}
+	return max(1, height/2)
 }
 
 func (m *Model) openSelected() {
@@ -475,6 +493,7 @@ func (m *Model) resizePreview() {
 	if m.previewViewport.Height < 4 {
 		m.previewViewport.Height = 4
 	}
+	m.previewViewport.SetContent(m.renderPreviewContent())
 }
 
 func (m *Model) resizeDiff() {
