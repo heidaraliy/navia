@@ -2,7 +2,8 @@
 
 ## Supported Versions
 
-Navia is early-stage open source software. Until tagged releases exist, security fixes target the `main` branch.
+Navia is early-stage open source software. Security fixes target the latest
+tagged release when one is available; otherwise they target the `main` branch.
 
 ## Reporting A Vulnerability
 

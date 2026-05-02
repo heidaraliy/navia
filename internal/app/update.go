@@ -12,10 +12,25 @@ import (
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	start := perfNow()
+	defer func() {
+		perfLogDuration("app.update", start, "msg", fmt.Sprintf("%T", msg))
+	}()
 	switch msg := msg.(type) {
 	case autoRefreshMsg:
-		m.handleAutoRefresh()
-		return m, autoRefreshCmd()
+		return m, tea.Batch(autoRefreshCmd(), m.handleAutoRefresh())
+	case previewLoadedMsg:
+		m.applyPreviewLoaded(msg)
+		return m, nil
+	case searchLoadedMsg:
+		return m.handleSearchLoaded(msg)
+	case treeSignatureMsg:
+		return m.handleTreeSignature(msg)
+	case diffRefreshMsg:
+		return m.handleDiffRefresh(msg)
+	case diffPreviewLoadedMsg:
+		m.applyDiffPreviewLoaded(msg)
+		return m, nil
 	case statusMsg:
 		return m.handleStatus(msg), nil
 	case editorStatusMsg:
@@ -117,19 +132,19 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Window command: h tree, l editor, w toggle, o only."
 		}
 	case "up", "k":
-		m.moveSelection(-1)
+		return m, m.moveSelection(-1)
 	case "down", "j":
-		m.moveSelection(1)
+		return m, m.moveSelection(1)
 	case "pgup", "ctrl+u":
-		m.moveSelection(-m.pageStep())
+		return m, m.moveSelection(-m.pageStep())
 	case "pgdown", "ctrl+d":
-		m.moveSelection(m.pageStep())
+		return m, m.moveSelection(m.pageStep())
 	case "enter", "l":
 		m.openSelected()
 	case "L", "shift+enter":
 		m.drillIntoSelectedRoot()
 	case "backspace", "h":
-		m.collapseOrParent()
+		return m, m.collapseOrParent()
 	case "/":
 		m.mode = ModeFilter
 		m.statusMessage = "Filtering current directory."
@@ -137,7 +152,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filter = ""
 		m.applyFilter()
 		m.clampSelection()
-		m.refreshPreview()
+		return m, m.queuePreview()
 	case "r":
 		if entry, ok := m.selected(); ok {
 			m.enterMode(ModeRename, "rename> ", entry.Name)
@@ -189,16 +204,17 @@ func (m *Model) enterHelpMode(returnMode Mode) {
 	m.helpViewport.GotoTop()
 }
 
-func (m *Model) moveSelection(delta int) {
+func (m *Model) moveSelection(delta int) tea.Cmd {
 	if delta == 0 || len(m.rows) == 0 {
-		return
+		return nil
 	}
 	before := m.selectedIndex
 	m.selectedIndex += delta
 	m.clampSelection()
 	if m.selectedIndex != before {
-		m.refreshPreview()
+		return m.queuePreview()
 	}
+	return nil
 }
 
 func (m Model) pageStep() int {
@@ -237,25 +253,25 @@ func (m *Model) openSelected() {
 	m.statusMessage = "Press `e` to open this file in your editor."
 }
 
-func (m *Model) collapseOrParent() {
+func (m *Model) collapseOrParent() tea.Cmd {
 	entry, ok := m.selected()
 	if !ok {
-		return
+		return nil
 	}
 	if entry.Path == m.cwd {
 		m.goParent()
-		return
+		return nil
 	}
 	if entry.IsDir && m.expandedDirs[entry.Path] {
 		m.expandedDirs[entry.Path] = false
 		path := entry.Path
 		m.setError(m.refresh())
 		m.selectPath(path)
-		return
+		return nil
 	}
 	parent := filepath.Dir(entry.Path)
 	m.selectPath(parent)
-	m.refreshPreview()
+	return m.queuePreview()
 }
 
 func (m *Model) goParent() {
@@ -324,10 +340,7 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.filter != m.executedSearchQuery {
 			m.executedSearchQuery = m.filter
-			m.applyFilter()
-			m.clampSelection()
-			m.refreshPreview()
-			return m, nil
+			return m, m.startSearch()
 		}
 		m.mode = ModeNormal
 		m.openSelected()
@@ -345,8 +358,7 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.selectedIndex = 0
 	m.applyFilter()
 	m.clampSelection()
-	m.refreshPreview()
-	return m, nil
+	return m, m.queuePreview()
 }
 
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
