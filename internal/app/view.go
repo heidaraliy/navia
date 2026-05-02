@@ -155,6 +155,9 @@ func (m Model) topRightMeta() string {
 		return fmt.Sprintf("Files:%d", len(m.diffChanges))
 	}
 	if buf := m.activeBuffer(); buf != nil && m.focus == FocusEditor {
+		if buf.IsMarkdown() {
+			return fmt.Sprintf("Markdown  Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
+		}
 		return fmt.Sprintf("Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
 	}
 	return fmt.Sprintf("Rows:%d", len(m.rows))
@@ -647,6 +650,8 @@ func (m Model) footerKeyStyle(hint footerHint) lipgloss.Style {
 		color = lipgloss.Color("111")
 	case "/", "e", ":w", "c", "p", "r", "gd/gr":
 		color = lipgloss.Color("114")
+	case "space":
+		color = lipgloss.Color("222")
 	}
 	return m.styles.FooterKey.Foreground(color)
 }
@@ -666,7 +671,7 @@ func (m Model) footerHints() []footerHint {
 		}
 	}
 	if m.activeBuffer() != nil && m.focus == FocusEditor {
-		return []footerHint{
+		hints := []footerHint{
 			{":w", "save"},
 			{":q", "close"},
 			{":bn/:bp", "tabs"},
@@ -674,6 +679,10 @@ func (m Model) footerHints() []footerHint {
 			{"ctrl+o/i", "jumps"},
 			{"gd/gr", ""},
 		}
+		if m.activeBuffer().IsMarkdown() {
+			hints = append([]footerHint{{"space", "task"}}, hints...)
+		}
+		return hints
 	}
 	return []footerHint{
 		{"q", "quit"},
@@ -763,6 +772,7 @@ func helpContent() string {
 			{"i/a/I/A/o/O", "enter insert"},
 			{"h/j/k/l, w/b/e", "move cursor"},
 			{"gg/G, :number", "jump"},
+			{"space", "toggle Markdown task checkbox"},
 			{"u / ctrl+r", "undo / redo"},
 			{"gd / gr", "definition / references"},
 		}),

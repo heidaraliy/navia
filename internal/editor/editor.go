@@ -416,6 +416,8 @@ func (b *Buffer) handleNormal(key string) Action {
 		b.undoLast()
 	case "ctrl+r":
 		b.redoLast()
+	case " ", "space":
+		return b.toggleMarkdownCheckbox()
 	case "v":
 		b.startVisual(Visual)
 	case "V":
@@ -643,6 +645,93 @@ func (b *Buffer) SearchQuery() string {
 		return b.query
 	}
 	return b.lastQuery
+}
+
+func (b *Buffer) IsMarkdown() bool {
+	return isMarkdownPath(b.Path)
+}
+
+func (b *Buffer) toggleMarkdownCheckbox() Action {
+	if !isMarkdownPath(b.Path) {
+		return Action{}
+	}
+	if b.Row < 0 || b.Row >= len(b.Lines) {
+		return Action{}
+	}
+	line := b.Lines[b.Row]
+	idx, checked, ok := markdownCheckboxMarker(line)
+	if !ok {
+		return Action{Kind: ActionStatus, Message: "No Markdown checkbox on this line."}
+	}
+	b.pushUndo()
+	next := 'x'
+	message := "Checked task."
+	if checked {
+		next = ' '
+		message = "Unchecked task."
+	}
+	runes := []rune(line)
+	runes[idx] = next
+	b.Lines[b.Row] = string(runes)
+	b.Dirty = true
+	return Action{Kind: ActionStatus, Message: message}
+}
+
+func isMarkdownPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdown", ".mkd":
+		return true
+	default:
+		return false
+	}
+}
+
+func markdownCheckboxMarker(line string) (int, bool, bool) {
+	runes := []rune(line)
+	i := skipMarkdownSpace(runes, 0)
+	if i >= len(runes) {
+		return 0, false, false
+	}
+	if isMarkdownBullet(runes[i]) && i+1 < len(runes) && isMarkdownSpace(runes[i+1]) {
+		i += 2
+	} else {
+		start := i
+		for i < len(runes) && runes[i] >= '0' && runes[i] <= '9' {
+			i++
+		}
+		if i == start || i >= len(runes) || (runes[i] != '.' && runes[i] != ')') || i+1 >= len(runes) || !isMarkdownSpace(runes[i+1]) {
+			i = start
+		} else {
+			i += 2
+		}
+	}
+	i = skipMarkdownSpace(runes, i)
+	if i+2 >= len(runes) || runes[i] != '[' || runes[i+2] != ']' {
+		return 0, false, false
+	}
+	switch runes[i+1] {
+	case ' ':
+		return i + 1, false, true
+	case 'x', 'X':
+		return i + 1, true, true
+	default:
+		return 0, false, false
+	}
+}
+
+func skipMarkdownSpace(runes []rune, i int) int {
+	for i < len(runes) && isMarkdownSpace(runes[i]) {
+		i++
+	}
+	return i
+}
+
+func isMarkdownSpace(r rune) bool {
+	return r == ' ' || r == '\t'
+}
+
+func isMarkdownBullet(r rune) bool {
+	return r == '-' || r == '*' || r == '+'
 }
 
 func (b *Buffer) Visible(width, height int) []string {

@@ -205,6 +205,54 @@ func TestBufferAndJumpCommands(t *testing.T) {
 	}
 }
 
+func TestMarkdownTaskCheckboxToggle(t *testing.T) {
+	b := NewScratch("tasks.md")
+	b.Lines = []string{
+		"# Plan",
+		"- [ ] first",
+		"2. [X] second",
+	}
+	b.Row = 1
+	b.Dirty = false
+
+	action := b.HandleKey(" ")
+	if action.Kind != ActionStatus || action.Message != "Checked task." {
+		t.Fatalf("space action = %#v", action)
+	}
+	if got := b.Lines[1]; got != "- [x] first" {
+		t.Fatalf("checked line = %q", got)
+	}
+	if !b.Dirty {
+		t.Fatal("toggle should mark buffer dirty")
+	}
+
+	b.HandleKey("u")
+	if got := b.Lines[1]; got != "- [ ] first" {
+		t.Fatalf("undo line = %q", got)
+	}
+
+	b.Row = 2
+	action = b.HandleKey("space")
+	if action.Kind != ActionStatus || action.Message != "Unchecked task." {
+		t.Fatalf("checked task action = %#v", action)
+	}
+	if got := b.Lines[2]; got != "2. [ ] second" {
+		t.Fatalf("unchecked line = %q", got)
+	}
+
+	b.Row = 0
+	action = b.HandleKey("space")
+	if action.Kind != ActionStatus || action.Message != "No Markdown checkbox on this line." {
+		t.Fatalf("plain markdown line action = %#v", action)
+	}
+
+	plain := NewScratch("tasks.txt")
+	plain.Lines = []string{"- [ ] no-op"}
+	if action := plain.HandleKey("space"); action.Kind != ActionNone || plain.Lines[0] != "- [ ] no-op" {
+		t.Fatalf("plain text toggle action=%#v line=%q", action, plain.Lines[0])
+	}
+}
+
 func TestFindMotionsAndRepeats(t *testing.T) {
 	b := NewScratch("x.txt")
 	b.Lines = []string{"banana"}
