@@ -52,6 +52,29 @@ go install github.com/heidaraliy/navia/cmd/navia@v0.1.0
 navia --version
 ```
 
+11. Generate and publish the Homebrew formula:
+
+```bash
+gh release download v0.1.0 --pattern 'navia_0.1.0_checksums.txt' --dir /tmp/navia-release
+tools/release/generate_homebrew_formula.sh v0.1.0 /tmp/navia-release/navia_0.1.0_checksums.txt > packaging/homebrew/navia.rb
+```
+
+Copy the generated formula to `heidaraliy/homebrew-tap` as `Formula/navia.rb`,
+then validate the tap with:
+
+```bash
+brew install heidaraliy/tap/navia
+navia --version
+brew test heidaraliy/tap/navia
+brew uninstall navia
+```
+
+12. Smoke-test the install script:
+
+```bash
+NAVIA_INSTALL_DIR="$(mktemp -d)" sh install.sh
+```
+
 ## What The Tag Does
 
 Pushing a `v*` tag starts `.github/workflows/release.yml`. The workflow:

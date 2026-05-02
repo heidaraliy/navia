@@ -37,7 +37,21 @@ is meant to be the terminal home base for small-to-medium project work.
 
 ## Install
 
-Users do not need Go to run Navia. Download the archive for your platform from
+Users do not need Go to run Navia.
+
+Install the latest release with:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/heidaraliy/navia/main/install.sh | sh
+```
+
+Or install with Homebrew:
+
+```bash
+brew install heidaraliy/tap/navia
+```
+
+Manual install is also supported. Download the archive for your platform from
 the latest GitHub release, extract it, and put the `navia` binary somewhere on
 your `PATH`.
 
