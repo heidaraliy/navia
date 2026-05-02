@@ -1,7 +1,20 @@
-# Navia
+<div align="center">
 
+<pre align="center">
+                  ▀▀
+████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄
+██ ██ ▄█▀██ ██▄██ ██  ▄█▀██
+██ ██ ▀█▄██  ▀█▀  ██▄ ▀█▄██
+</pre>
+
+<p><strong>A microIDE in your terminal.</strong></p>
+
+<p>
 Navia is a terminal micro-IDE: a fast project explorer, previewer, recursive
 search tool, modal editor, and git review surface, in one keyboard-driven Go TUI.
+</p>
+
+</div>
 
 ## What Navia Gives You
 
