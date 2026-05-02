@@ -13,6 +13,9 @@ import (
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case autoRefreshMsg:
+		m.handleAutoRefresh()
+		return m, autoRefreshCmd()
 	case statusMsg:
 		return m.handleStatus(msg), nil
 	case editorStatusMsg:

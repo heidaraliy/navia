@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -125,6 +126,45 @@ func TestShiftLDrillsIntoSelectedDirectoryRoot(t *testing.T) {
 	}
 }
 
+func TestAutoRefreshTreeAddsNewVisibleFile(t *testing.T) {
+	root := t.TempDir()
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeAppFile(t, filepath.Join(root, "live.txt"), "hello\n")
+	updated, _ := m.Update(autoRefreshMsg{})
+	got := updated.(Model)
+	if _, ok := rowNamed(got.rows, "live.txt"); !ok {
+		t.Fatalf("rows missing live.txt after auto-refresh: %#v", got.rows)
+	}
+}
+
+func TestAutoRefreshDiffUpdatesSelectedPreview(t *testing.T) {
+	root := initAppRepo(t)
+	path := filepath.Join(root, "tracked.txt")
+	writeAppFile(t, path, "one\n")
+	runAppGit(t, root, "add", "tracked.txt")
+	runAppGit(t, root, "commit", "-m", "initial")
+	writeAppFile(t, path, "one\ntwo\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.enterDiffMode()
+	writeAppFile(t, path, "one\ntwo\nthree\n")
+	updated, _ := m.Update(autoRefreshMsg{})
+	got := updated.(Model)
+	if !strings.Contains(got.diffViewport.View(), "three") {
+		t.Fatalf("diff preview did not auto-refresh:\n%s", got.diffViewport.View())
+	}
+	if len(got.diffChanges) != 1 || got.diffChanges[0].Path != "tracked.txt" {
+		t.Fatalf("diff selection changed unexpectedly: %#v", got.diffChanges)
+	}
+}
+
 func initAppRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -150,4 +190,13 @@ func writeAppFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func rowNamed(rows []ResultRow, name string) (ResultRow, bool) {
+	for _, row := range rows {
+		if row.Entry.Name == name {
+			return row, true
+		}
+	}
+	return ResultRow{}, false
 }
