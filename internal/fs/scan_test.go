@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -116,6 +117,64 @@ func TestRecursiveSearchFilesAndText(t *testing.T) {
 	}
 	if len(textMatches) == 0 || textMatches[0].Line != 2 {
 		t.Fatalf("expected recursive text match on line 2, got %#v", textMatches)
+	}
+}
+
+func TestRecursiveSearchSkipsHiddenWhenConfigured(t *testing.T) {
+	dir := t.TempDir()
+	hidden := filepath.Join(dir, ".hidden")
+	must(t, os.MkdirAll(hidden, 0o755))
+	must(t, os.WriteFile(filepath.Join(hidden, "needle.txt"), []byte("needle\n"), 0o644))
+
+	fileMatches, err := SearchFiles(dir, "needle", ScanOptions{ShowHidden: false, SortDirsFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fileMatches) != 0 {
+		t.Fatalf("hidden file matches = %#v, want none", fileMatches)
+	}
+
+	textMatches, err := SearchText(dir, "needle", 1024, ScanOptions{ShowHidden: false, SortDirsFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(textMatches) != 0 {
+		t.Fatalf("hidden text matches = %#v, want none", textMatches)
+	}
+}
+
+func TestRecursiveSearchSkipsIgnoredNames(t *testing.T) {
+	dir := t.TempDir()
+	ignored := filepath.Join(dir, "node_modules", "pkg")
+	must(t, os.MkdirAll(ignored, 0o755))
+	must(t, os.WriteFile(filepath.Join(ignored, "needle.txt"), []byte("needle\n"), 0o644))
+	opts := ScanOptions{ShowHidden: true, SortDirsFirst: true, IgnoreNames: map[string]bool{"node_modules": true}}
+
+	fileMatches, err := SearchFiles(dir, "needle", opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fileMatches) != 0 {
+		t.Fatalf("ignored file matches = %#v, want none", fileMatches)
+	}
+
+	textMatches, err := SearchText(dir, "needle", 1024, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(textMatches) != 0 {
+		t.Fatalf("ignored text matches = %#v, want none", textMatches)
+	}
+}
+
+func TestDirectoryPreviewIsCapped(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < MaxDirectoryPreviewEntries+5; i++ {
+		must(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("file-%04d.txt", i)), []byte("x"), 0o644))
+	}
+	preview := BuildPreviewWithOptions(dir, 1024, ScanOptions{ShowHidden: true})
+	if !preview.Truncated {
+		t.Fatal("directory preview should report truncation")
 	}
 }
 
