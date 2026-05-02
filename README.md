@@ -1,11 +1,8 @@
 <div align="center">
 
-<pre align="center">
-                  ▀▀
-████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄
-██ ██ ▄█▀██ ██▄██ ██  ▄█▀██
-██ ██ ▀█▄██  ▀█▀  ██▄ ▀█▄██
-</pre>
+<h1>
+  <img src="docs/assets/navia-logo.svg" alt="Navia" width="486">
+</h1>
 
 <p><strong>A microIDE in your terminal.</strong></p>
 
