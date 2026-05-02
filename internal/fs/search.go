@@ -26,10 +26,10 @@ func SearchFiles(root, query string, opts ScanOptions) ([]SearchMatch, error) {
 		if err != nil {
 			return nil
 		}
-		if path != root && d.IsDir() && !opts.ShowHidden && strings.HasPrefix(d.Name(), ".") {
-			return filepath.SkipDir
-		}
-		if path != root && !opts.ShowHidden && strings.HasPrefix(d.Name(), ".") {
+		if path != root && ShouldSkipName(d.Name(), opts) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if query == "" || strings.Contains(strings.ToLower(d.Name()), query) {
@@ -68,13 +68,13 @@ func SearchText(root, query string, maxBytes int64, opts ScanOptions) ([]SearchM
 		if err != nil {
 			return nil
 		}
-		if path != root && d.IsDir() && !opts.ShowHidden && strings.HasPrefix(d.Name(), ".") {
-			return filepath.SkipDir
-		}
-		if d.IsDir() {
+		if path != root && ShouldSkipName(d.Name(), opts) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
-		if path != root && !opts.ShowHidden && strings.HasPrefix(d.Name(), ".") {
+		if d.IsDir() {
 			return nil
 		}
 		match, ok := searchFileText(path, query, maxBytes)

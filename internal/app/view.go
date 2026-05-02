@@ -12,7 +12,11 @@ import (
 	"github.com/heidaraliy/navia/internal/git"
 )
 
-func (m Model) View() string {
+func (m Model) View() (out string) {
+	start := perfNow()
+	defer func() {
+		perfLogDuration("app.view", start, "mode", fmt.Sprintf("%d", m.mode))
+	}()
 	if m.width == 0 {
 		return "Navia is starting..."
 	}
@@ -435,13 +439,20 @@ func (m Model) renderPreview(width int) string {
 }
 
 func (m Model) renderPreviewContent() string {
-	content := m.preview.Content
-	if m.preview.Kind != navfs.PreviewText {
+	path := m.preview.Path
+	if entry, ok := m.selected(); ok {
+		path = entry.Path
+	}
+	return m.renderPreviewContentFor(m.preview, path)
+}
+
+func (m Model) renderPreviewContentFor(preview navfs.Preview, path string) string {
+	content := preview.Content
+	if preview.Kind != navfs.PreviewText {
 		return content
 	}
-	entry, ok := m.selected()
-	if !ok {
-		return content
+	if path == "" {
+		path = preview.Path
 	}
 	lines := strings.Split(content, "\n")
 	limit := m.previewRenderLineLimit()
@@ -456,7 +467,7 @@ func (m Model) renderPreviewContent() string {
 		if clippedLine {
 			truncatedLongLine = true
 		}
-		lines[i] = m.syntax.HighlightLine(entry.Path, clipped)
+		lines[i] = m.syntax.HighlightLine(path, clipped)
 	}
 	if truncatedLines || truncatedLongLine {
 		lines = append(lines, "", m.styles.Dim.Render(previewRenderNotice(truncatedLines, truncatedLongLine, limit)))

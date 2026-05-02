@@ -165,7 +165,15 @@ func TestAutoRefreshTreeAddsNewVisibleFile(t *testing.T) {
 	}
 
 	writeAppFile(t, filepath.Join(root, "live.txt"), "hello\n")
-	updated, _ := m.Update(autoRefreshMsg{})
+	cmd := m.handleAutoRefresh()
+	if cmd == nil {
+		t.Fatal("expected auto refresh command")
+	}
+	msg, ok := cmd().(treeSignatureMsg)
+	if !ok {
+		t.Fatalf("auto refresh msg = %T, want treeSignatureMsg", cmd())
+	}
+	updated, _ := m.handleTreeSignature(msg)
 	got := updated.(Model)
 	if _, ok := rowNamed(got.rows, "live.txt"); !ok {
 		t.Fatalf("rows missing live.txt after auto-refresh: %#v", got.rows)
@@ -186,13 +194,40 @@ func TestAutoRefreshDiffUpdatesSelectedPreview(t *testing.T) {
 	}
 	m.enterDiffMode()
 	writeAppFile(t, path, "one\ntwo\nthree\n")
-	updated, _ := m.Update(autoRefreshMsg{})
+	cmd := m.handleAutoRefresh()
+	if cmd == nil {
+		t.Fatal("expected diff refresh command")
+	}
+	msg, ok := cmd().(diffRefreshMsg)
+	if !ok {
+		t.Fatalf("auto refresh msg = %T, want diffRefreshMsg", cmd())
+	}
+	updated, _ := m.handleDiffRefresh(msg)
 	got := updated.(Model)
 	if !strings.Contains(got.diffViewport.View(), "three") {
 		t.Fatalf("diff preview did not auto-refresh:\n%s", got.diffViewport.View())
 	}
 	if len(got.diffChanges) != 1 || got.diffChanges[0].Path != "tracked.txt" {
 		t.Fatalf("diff selection changed unexpectedly: %#v", got.diffChanges)
+	}
+}
+
+func TestNewRespectsShowHiddenConfig(t *testing.T) {
+	root := t.TempDir()
+	writeAppFile(t, filepath.Join(root, ".hidden"), "secret\n")
+	writeAppFile(t, filepath.Join(root, "visible"), "ok\n")
+
+	cfg := config.Default()
+	cfg.ShowHidden = false
+	m, err := New(root, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rowNamed(m.rows, ".hidden"); ok {
+		t.Fatalf("hidden file should not be visible: %#v", m.rows)
+	}
+	if _, ok := rowNamed(m.rows, "visible"); !ok {
+		t.Fatalf("visible file missing: %#v", m.rows)
 	}
 }
 
@@ -257,6 +292,90 @@ func TestEnterOpensFileSearchResultInEditor(t *testing.T) {
 	}
 	if got.focus != FocusEditor {
 		t.Fatalf("focus = %v, want editor", got.focus)
+	}
+}
+
+func TestFilterEnterRunsSearchAsCommand(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "combat-plan.md")
+	writeAppFile(t, match, "alpha\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mode = ModeFilter
+	m.filter = "combat"
+	updated, cmd := m.updateFilter(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected async search command")
+	}
+	if !got.searchRunning || got.statusMessage != "Searching..." {
+		t.Fatalf("search state running=%v status=%q", got.searchRunning, got.statusMessage)
+	}
+	msg, ok := cmd().(searchLoadedMsg)
+	if !ok {
+		t.Fatalf("search msg = %T, want searchLoadedMsg", cmd())
+	}
+	updated, _ = got.handleSearchLoaded(msg)
+	got = updated.(Model)
+	if got.searchRunning {
+		t.Fatal("search should be complete")
+	}
+	if len(got.rows) != 1 || got.rows[0].Entry.Path != match {
+		t.Fatalf("rows = %#v, want %q", got.rows, match)
+	}
+}
+
+func TestStaleSearchResultIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	writeAppFile(t, filepath.Join(root, "a.txt"), "alpha\n")
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mode = ModeFilter
+	m.filter = "alpha"
+	m.executedSearchQuery = "alpha"
+	m.searchRequestID = 2
+	m.rows = []ResultRow{{Entry: m.entries[0]}}
+
+	updated, _ := m.handleSearchLoaded(searchLoadedMsg{id: 1, mode: SearchFiles, query: "alpha", root: root})
+	got := updated.(Model)
+	if got.searchRequestID != 2 || len(got.rows) != 1 {
+		t.Fatalf("stale result changed model: id=%d rows=%#v", got.searchRequestID, got.rows)
+	}
+}
+
+func TestStalePreviewResultIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	a := filepath.Join(root, "a.txt")
+	b := filepath.Join(root, "b.txt")
+	writeAppFile(t, a, "a\n")
+	writeAppFile(t, b, "b\n")
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.selectPath(a)
+	cmdA := m.queuePreview()
+	m.selectPath(b)
+	cmdB := m.queuePreview()
+	if cmdA == nil || cmdB == nil {
+		t.Fatal("expected preview commands")
+	}
+	if msg, ok := cmdA().(previewLoadedMsg); ok {
+		m.applyPreviewLoaded(msg)
+	}
+	if m.preview.Path == a {
+		t.Fatalf("stale preview applied for %s", a)
+	}
+	if msg, ok := cmdB().(previewLoadedMsg); ok {
+		m.applyPreviewLoaded(msg)
+	}
+	if m.preview.Path != b {
+		t.Fatalf("latest preview path = %q, want %q", m.preview.Path, b)
 	}
 }
 
