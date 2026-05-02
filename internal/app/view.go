@@ -12,6 +12,11 @@ import (
 	"github.com/heidaraliy/navia/internal/git"
 )
 
+type footerHint struct {
+	key   string
+	label string
+}
+
 func (m Model) View() (out string) {
 	start := perfNow()
 	defer func() {
@@ -596,19 +601,72 @@ func (m Model) renderIdleBrand(width, height int) string {
 func (m Model) renderFooter() string {
 	status := m.statusMessage
 	if status == "" {
-		if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-			status = "Esc tree  s stage  u unstage  R restore  D rm  c commit  p push  r refresh  auto"
-		} else if m.activeBuffer() != nil && m.focus == FocusEditor {
-			status = ":w save  :q close  :bn/:bp tabs  :bl list  ctrl+o/i jumps  gd/gr"
-		} else {
-			status = "q quit  ? help  D diff  enter/l expand  h collapse  / search  e edit"
-		}
+		return m.renderFooterKeyBar()
 	}
 	cmd := m.lastCommandHint
 	if cmd != "" {
 		status += " | " + m.styles.Command.Render(cmd)
 	}
 	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
+}
+
+func (m Model) renderFooterKeyBar() string {
+	parts := make([]string, 0, len(m.footerHints())*2+1)
+	for i, hint := range m.footerHints() {
+		if i > 0 {
+			parts = append(parts, m.styles.FooterSeparator.Render(" | "))
+		}
+		parts = append(parts, m.renderFooterHint(hint))
+	}
+	if m.lastCommandHint != "" {
+		parts = append(parts, m.styles.FooterSeparator.Render(" | "))
+		parts = append(parts, m.styles.Command.Render(m.lastCommandHint))
+	}
+	status := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
+}
+
+func (m Model) renderFooterHint(hint footerHint) string {
+	text := m.styles.FooterKey.Render(hint.key)
+	if hint.label != "" {
+		text += " " + hint.label
+	}
+	return m.styles.FooterTab.Render(text)
+}
+
+func (m Model) footerHints() []footerHint {
+	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		return []footerHint{
+			{"Esc", "tree"},
+			{"s", "stage"},
+			{"u", "unstage"},
+			{"R", "restore"},
+			{"D", "rm"},
+			{"c", "commit"},
+			{"p", "push"},
+			{"r", "refresh"},
+			{"auto", ""},
+		}
+	}
+	if m.activeBuffer() != nil && m.focus == FocusEditor {
+		return []footerHint{
+			{":w", "save"},
+			{":q", "close"},
+			{":bn/:bp", "tabs"},
+			{":bl", "list"},
+			{"ctrl+o/i", "jumps"},
+			{"gd/gr", ""},
+		}
+	}
+	return []footerHint{
+		{"q", "quit"},
+		{"?", "help"},
+		{"D", "diff"},
+		{"enter/l", "expand"},
+		{"h", "collapse"},
+		{"/", "search"},
+		{"e", "edit"},
+	}
 }
 
 func (m Model) renderModal() string {
