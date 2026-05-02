@@ -124,6 +124,12 @@ type Model struct {
 	expandedDirs        map[string]bool
 }
 
+const (
+	previewRenderMaxLines        = 400
+	previewRenderOverscanScreens = 4
+	previewRenderMaxLineRunes    = 2000
+)
+
 func New(start string, cfg config.Config) (Model, error) {
 	cwd, err := navfs.ResolveDir(start)
 	if err != nil {
@@ -297,7 +303,7 @@ func (m *Model) refreshPreview() {
 	if row, ok := m.selectedRow(); ok && row.Line > 0 {
 		m.preview.Content = fmt.Sprintf("line %d: %s\n\n%s", row.Line, row.Snippet, m.preview.Content)
 	}
-	m.previewViewport.SetContent(m.preview.Content)
+	m.previewViewport.SetContent(m.renderPreviewContent())
 	m.previewViewport.GotoTop()
 }
 

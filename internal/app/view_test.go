@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/heidaraliy/navia/internal/editor"
+	navfs "github.com/heidaraliy/navia/internal/fs"
+	"github.com/heidaraliy/navia/internal/ui"
 )
 
 func TestTopHeightIsCompact(t *testing.T) {
@@ -134,5 +136,29 @@ func TestDiffLineStyleDetectsFormattedLines(t *testing.T) {
 		if got := diffLineStyle(line); got != want {
 			t.Fatalf("diffLineStyle(%q) = %q, want %q", line, got, want)
 		}
+	}
+}
+
+func TestRenderPreviewContentBoundsLargeText(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < 1000; i++ {
+		b.WriteString(strings.Repeat("x", 500))
+		b.WriteByte('\n')
+	}
+	m := Model{
+		preview: navfs.Preview{Kind: navfs.PreviewText, Content: b.String()},
+		rows: []ResultRow{{
+			Entry: navfs.FileEntry{Name: "big.go", Path: "big.go"},
+		}},
+		styles: ui.NewStyles(),
+	}
+	m.previewViewport.Width = 40
+	m.previewViewport.Height = 10
+	got := m.renderPreviewContent()
+	if strings.Count(got, "\n") > 60 {
+		t.Fatalf("preview rendered too many lines: %d", strings.Count(got, "\n"))
+	}
+	if !strings.Contains(got, "preview render limited") {
+		t.Fatalf("preview missing render limit notice:\n%s", got)
 	}
 }

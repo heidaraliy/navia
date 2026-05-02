@@ -87,6 +87,12 @@ func TestPreviewHonorsByteLimit(t *testing.T) {
 	if preview.Content == "abcdefghijklmnopqrstuvwxyz" {
 		t.Fatal("preview ignored byte limit")
 	}
+	if !preview.Truncated {
+		t.Fatal("preview should report truncation")
+	}
+	if preview.Path != path || preview.Size == 0 || preview.ModTime.IsZero() {
+		t.Fatalf("preview metadata missing: %#v", preview)
+	}
 }
 
 func TestRecursiveSearchFilesAndText(t *testing.T) {

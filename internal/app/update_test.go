@@ -31,6 +31,23 @@ func TestBareCtrlWFromTreeDoesNotSwitchFocus(t *testing.T) {
 	}
 }
 
+func TestPageKeysMoveTreeSelectionInChunks(t *testing.T) {
+	m := Model{height: 24}
+	for i := 0; i < 50; i++ {
+		m.rows = append(m.rows, ResultRow{})
+	}
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyPgDown})
+	got := updated.(Model)
+	if got.selectedIndex <= 1 {
+		t.Fatalf("pgdown selectedIndex = %d, want chunk movement", got.selectedIndex)
+	}
+	updated, _ = got.updateNormal(tea.KeyMsg{Type: tea.KeyPgUp})
+	got = updated.(Model)
+	if got.selectedIndex != 0 {
+		t.Fatalf("pgup selectedIndex = %d, want 0", got.selectedIndex)
+	}
+}
+
 func TestDiffModeListsChangesAndEscReturnsToTree(t *testing.T) {
 	root := initAppRepo(t)
 	writeAppFile(t, filepath.Join(root, "tracked.txt"), "one\n")
