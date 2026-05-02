@@ -165,6 +165,70 @@ func TestAutoRefreshDiffUpdatesSelectedPreview(t *testing.T) {
 	}
 }
 
+func TestNewWithSearchStartsFileSearch(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "notes", "combat-plan.md")
+	writeAppFile(t, match, "alpha\n")
+	writeAppFile(t, filepath.Join(root, "notes", "readme.md"), "beta\n")
+
+	m, err := NewWithSearch(root, config.Default(), StartupSearch{Mode: SearchFiles, Query: "combat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.mode != ModeFilter {
+		t.Fatalf("mode = %v, want ModeFilter", m.mode)
+	}
+	if m.searchMode != SearchFiles || m.filter != "combat" || m.executedSearchQuery != "combat" {
+		t.Fatalf("search state = mode %v filter %q executed %q", m.searchMode, m.filter, m.executedSearchQuery)
+	}
+	if len(m.rows) != 1 || m.rows[0].Entry.Path != match {
+		t.Fatalf("rows = %#v, want only %q", m.rows, match)
+	}
+}
+
+func TestNewWithSearchStartsTextSearch(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "story.txt")
+	writeAppFile(t, match, "alpha\nneedle in a line\n")
+	writeAppFile(t, filepath.Join(root, "other.txt"), "alpha\n")
+
+	m, err := NewWithSearch(root, config.Default(), StartupSearch{Mode: SearchText, Query: "needle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.searchMode != SearchText || m.filter != "needle" || m.executedSearchQuery != "needle" {
+		t.Fatalf("search state = mode %v filter %q executed %q", m.searchMode, m.filter, m.executedSearchQuery)
+	}
+	if len(m.rows) != 1 || m.rows[0].Entry.Path != match || m.rows[0].Line != 2 {
+		t.Fatalf("rows = %#v, want text match in %q line 2", m.rows, match)
+	}
+	if !strings.Contains(m.preview.Content, "line 2: needle in a line") {
+		t.Fatalf("preview = %q, want search line context", m.preview.Content)
+	}
+}
+
+func TestEnterOpensFileSearchResultInEditor(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "combat-plan.md")
+	writeAppFile(t, match, "alpha\n")
+
+	m, err := NewWithSearch(root, config.Default(), StartupSearch{Mode: SearchFiles, Query: "combat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := m.updateFilter(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if got.mode != ModeNormal {
+		t.Fatalf("mode = %v, want ModeNormal", got.mode)
+	}
+	if len(got.editorTabs) != 1 || got.editorTabs[0].Path != match {
+		t.Fatalf("editor tabs = %#v, want %q", got.editorTabs, match)
+	}
+	if got.focus != FocusEditor {
+		t.Fatalf("focus = %v, want editor", got.focus)
+	}
+}
+
 func initAppRepo(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()

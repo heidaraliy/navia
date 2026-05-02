@@ -41,6 +41,11 @@ const (
 	SearchText
 )
 
+type StartupSearch struct {
+	Mode  SearchMode
+	Query string
+}
+
 type FocusPane int
 
 const (
@@ -159,12 +164,36 @@ func New(start string, cfg config.Config) (Model, error) {
 	return m, nil
 }
 
+func NewWithSearch(start string, cfg config.Config, search StartupSearch) (Model, error) {
+	m, err := New(start, cfg)
+	if err != nil {
+		return Model{}, err
+	}
+	m.StartSearch(search)
+	return m, nil
+}
+
 func (m Model) Init() tea.Cmd {
 	return autoRefreshCmd()
 }
 
 func (m *Model) SetStatus(msg string) {
 	m.statusMessage = msg
+}
+
+func (m *Model) StartSearch(search StartupSearch) {
+	query := strings.TrimSpace(search.Query)
+	if query == "" {
+		return
+	}
+	m.searchMode = search.Mode
+	m.filter = query
+	m.executedSearchQuery = query
+	m.mode = ModeFilter
+	m.selectedIndex = 0
+	m.applyFilter()
+	m.clampSelection()
+	m.refreshPreview()
 }
 
 func (m *Model) refresh() error {
