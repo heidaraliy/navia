@@ -15,11 +15,17 @@ const version = "0.1.0"
 
 func main() {
 	showVersion := flag.Bool("version", false, "show version")
+	textSearch := flag.String("s", "", "start in recursive text search with query")
+	fileSearch := flag.String("f", "", "start in recursive file-name search with query")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("navia " + version)
 		return
+	}
+	if *textSearch != "" && *fileSearch != "" {
+		fmt.Fprintln(os.Stderr, "navia: use only one of --s or --f")
+		os.Exit(2)
 	}
 
 	root := "."
@@ -33,7 +39,15 @@ func main() {
 	}
 
 	cfg, warning := config.Load()
-	model, err := app.New(abs, cfg)
+	var model app.Model
+	switch {
+	case *textSearch != "":
+		model, err = app.NewWithSearch(abs, cfg, app.StartupSearch{Mode: app.SearchText, Query: *textSearch})
+	case *fileSearch != "":
+		model, err = app.NewWithSearch(abs, cfg, app.StartupSearch{Mode: app.SearchFiles, Query: *fileSearch})
+	default:
+		model, err = app.New(abs, cfg)
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "navia: %v\n", err)
 		os.Exit(1)
