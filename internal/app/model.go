@@ -28,6 +28,10 @@ const (
 	ModeGoToPath
 	ModeConfirmDelete
 	ModeHelp
+	ModeDiff
+	ModeDiffCommit
+	ModeDiffConfirmRestore
+	ModeDiffConfirmRemove
 )
 
 type SearchMode int
@@ -90,9 +94,15 @@ type Model struct {
 	executedSearchQuery string
 	searchMode          SearchMode
 	mode                Mode
+	helpReturnMode      Mode
 	clipboard           ClipboardState
 	preview             navfs.Preview
 	previewViewport     viewport.Model
+	diffViewport        viewport.Model
+	diffChanges         []git.Change
+	diffSummary         git.Summary
+	diffSelectedIndex   int
+	pendingDiffAction   git.Change
 	helpViewport        viewport.Model
 	editorTabs          []*editor.Buffer
 	activeTab           int
@@ -129,6 +139,7 @@ func New(start string, cfg config.Config) (Model, error) {
 		syntax:          syntax.New(cfg.Theme),
 		input:           input,
 		previewViewport: viewport.New(40, 10),
+		diffViewport:    viewport.New(67, 10),
 		helpViewport:    viewport.New(80, 20),
 		expandedDirs:    map[string]bool{cwd: true},
 	}

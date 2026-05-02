@@ -26,22 +26,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resizePreview()
+		m.resizeDiff()
 		m.resizeHelp()
 		return m, nil
 	case tea.KeyMsg:
-		if m.mode != ModeNormal && m.mode != ModeFilter && m.mode != ModeConfirmDelete && m.mode != ModeHelp {
-			return m.updateInput(msg)
-		}
-		if m.mode == ModeFilter {
-			return m.updateFilter(msg)
-		}
-		if m.mode == ModeConfirmDelete {
-			return m.updateDeleteConfirm(msg)
-		}
 		if m.mode == ModeHelp {
 			switch msg.String() {
 			case "esc", "q", "?":
-				m.mode = ModeNormal
+				m.mode = m.helpReturnMode
+				if m.mode == ModeHelp {
+					m.mode = ModeNormal
+				}
 			case "j", "down":
 				m.helpViewport.LineDown(1)
 			case "k", "up":
@@ -56,6 +51,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.helpViewport.GotoTop()
 			}
 			return m, nil
+		}
+		if m.mode == ModeDiff {
+			return m.updateDiff(msg)
+		}
+		if m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+			return m.updateDiffConfirm(msg)
+		}
+		if m.mode != ModeNormal && m.mode != ModeFilter && m.mode != ModeConfirmDelete {
+			return m.updateInput(msg)
+		}
+		if m.mode == ModeFilter {
+			return m.updateFilter(msg)
+		}
+		if m.mode == ModeConfirmDelete {
+			return m.updateDeleteConfirm(msg)
 		}
 		if m.focus == FocusEditor && m.activeBuffer() != nil {
 			return m.updateEditor(msg)
@@ -163,7 +173,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		return m, m.openSelectedInEditor()
 	case "?":
+		m.helpReturnMode = ModeNormal
 		m.mode = ModeHelp
+	case "D":
+		m.enterDiffMode()
 	}
 	return m, nil
 }
@@ -311,8 +324,14 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		value := m.input.Value()
+		mode := m.mode
 		m.applyInput(value)
-		m.exitMode()
+		if mode == ModeDiffCommit {
+			m.mode = ModeDiff
+			m.input.Blur()
+		} else {
+			m.exitMode()
+		}
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -359,6 +378,8 @@ func (m *Model) applyInput(value string) {
 		m.cwd = dir
 		m.selectedIndex = 0
 		m.expandedDirs = map[string]bool{dir: true}
+	case ModeDiffCommit:
+		m.applyDiffCommit(value)
 	}
 	m.setError(m.refresh())
 }
@@ -453,6 +474,22 @@ func (m *Model) resizePreview() {
 	m.previewViewport.Height = height - 4
 	if m.previewViewport.Height < 4 {
 		m.previewViewport.Height = 4
+	}
+}
+
+func (m *Model) resizeDiff() {
+	_, right := m.paneWidths()
+	height := m.height - m.topHeight() - 2
+	if height < 4 {
+		height = 4
+	}
+	m.diffViewport.Width = right - 6
+	if m.diffViewport.Width < 8 {
+		m.diffViewport.Width = 8
+	}
+	m.diffViewport.Height = height - 5
+	if m.diffViewport.Height < 4 {
+		m.diffViewport.Height = 4
 	}
 }
 

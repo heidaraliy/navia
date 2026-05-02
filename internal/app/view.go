@@ -9,6 +9,7 @@ import (
 	termansi "github.com/charmbracelet/x/ansi"
 	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
+	"github.com/heidaraliy/navia/internal/git"
 )
 
 func (m Model) View() string {
@@ -23,13 +24,16 @@ func (m Model) View() string {
 	if m.mode == ModeHelp {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderHelp(), lipgloss.WithWhitespaceChars(" "))
 	}
-	if m.mode == ModeConfirmDelete || (m.mode != ModeNormal && m.mode != ModeFilter) {
+	if m.mode == ModeConfirmDelete || m.mode == ModeRename || m.mode == ModeNewFile || m.mode == ModeNewDir || m.mode == ModeGoToPath || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		return body + "\n" + m.renderModal()
 	}
 	return body
 }
 
 func (m Model) renderMain(leftW, rightW int) string {
+	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		return lipgloss.JoinHorizontal(lipgloss.Top, m.renderDiffList(leftW), m.renderDiffPane(rightW))
+	}
 	if m.treeHidden && m.activeBuffer() != nil {
 		return m.renderRightPane(m.width)
 	}
@@ -62,6 +66,9 @@ func (m Model) topLeft() string {
 		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
 			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
 			" " + queryStyle.Render(query)
+	}
+	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
 	}
 	if m.focus == FocusEditor {
 		if buf := m.activeBuffer(); buf != nil {
@@ -135,6 +142,9 @@ func searchModeColor(mode SearchMode) lipgloss.Color {
 }
 
 func (m Model) topRightMeta() string {
+	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		return fmt.Sprintf("Files:%d", len(m.diffChanges))
+	}
 	if buf := m.activeBuffer(); buf != nil && m.focus == FocusEditor {
 		return fmt.Sprintf("Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
 	}
@@ -151,6 +161,8 @@ func (m Model) topContext() string {
 	context := project + "  " + path
 	if m.mode == ModeFilter || m.filter != "" {
 		context = "tab toggles files/text  enter runs recursive search"
+	} else if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		context = diffSummaryText(m.diffSummary)
 	} else if buf := m.activeBuffer(); buf != nil {
 		context = tabLabel(buf) + "  " + statusPath(buf.Path)
 	}
@@ -318,6 +330,84 @@ func (m Model) renderList(width int) string {
 	return panel.Width(width - 2).Height(height).Render(content)
 }
 
+func (m Model) renderDiffList(width int) string {
+	height := m.listHeight()
+	innerW := max(8, width-4)
+	innerH := max(4, height-2)
+	panel := m.panelStyle(FocusTree)
+	if len(m.diffChanges) == 0 {
+		content := m.styles.TreePane.Width(innerW).Height(innerH).Render(m.styles.Dim.Render("No modified or untracked files."))
+		return panel.Width(width - 2).Height(height).Render(content)
+	}
+	start := m.diffSelectedIndex - innerH/2
+	if start < 0 {
+		start = 0
+	}
+	if start+innerH > len(m.diffChanges) {
+		start = len(m.diffChanges) - innerH
+	}
+	if start < 0 {
+		start = 0
+	}
+	lines := make([]string, 0, innerH)
+	for i := start; i < len(m.diffChanges) && len(lines) < innerH; i++ {
+		change := m.diffChanges[i]
+		label := fmt.Sprintf("%s %-9s %s", diffStatusText(change), diffKindLabel(change), change.Path)
+		if change.OldPath != "" {
+			label = fmt.Sprintf("%s %-9s %s -> %s", diffStatusText(change), diffKindLabel(change), change.OldPath, change.Path)
+		}
+		line := truncate(label, innerW)
+		switch change.Kind {
+		case git.ChangeAdded, git.ChangeUntracked:
+			line = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(line)
+		case git.ChangeDeleted:
+			line = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(line)
+		default:
+			line = m.styles.TreePane.Render(line)
+		}
+		if i == m.diffSelectedIndex {
+			line = m.styles.Selected.Width(innerW).Render(line)
+		}
+		lines = append(lines, line)
+	}
+	content := m.styles.TreePane.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
+	return panel.Width(width - 2).Height(height).Render(content)
+}
+
+func (m Model) renderDiffPane(width int) string {
+	height := m.listHeight()
+	innerW := max(8, width-4)
+	innerH := max(4, height-2)
+	title := "Diff"
+	if change, ok := m.selectedDiffChange(); ok {
+		title = change.Path
+	}
+	header := m.styles.Highlight.Render(truncate(title, innerW))
+	content := m.renderDiffContent()
+	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
+	return m.panelStyle(FocusEditor).Width(width - 2).Height(height).Render(body)
+}
+
+func (m Model) renderDiffContent() string {
+	content := m.diffViewport.View()
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		switch diffLineStyle(line) {
+		case "add":
+			lines[i] = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(line)
+		case "remove":
+			lines[i] = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(line)
+		case "hunk":
+			lines[i] = m.styles.Highlight.Render(line)
+		case "header":
+			lines[i] = m.styles.Dim.Render(line)
+		default:
+			lines[i] = line
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m Model) renderRightPane(width int) string {
 	if buf := m.activeBuffer(); buf != nil {
 		return m.renderEditor(width, buf)
@@ -425,10 +515,12 @@ func (m Model) renderIdleBrand(width, height int) string {
 func (m Model) renderFooter() string {
 	status := m.statusMessage
 	if status == "" {
-		if m.activeBuffer() != nil && m.focus == FocusEditor {
+		if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+			status = "Esc tree  s stage  u unstage  R restore  D rm  c commit  p push  r refresh"
+		} else if m.activeBuffer() != nil && m.focus == FocusEditor {
 			status = ":w save  :q close  :bn/:bp tabs  :bl list  ctrl+o/i jumps  gd/gr"
 		} else {
-			status = "q quit  ? help  enter/l expand  h collapse  / search  c edit  e external"
+			status = "q quit  ? help  D diff  enter/l expand  h collapse  / search  c edit  e external"
 		}
 	}
 	cmd := m.lastCommandHint
@@ -451,6 +543,12 @@ func (m Model) renderModal() string {
 		return m.styles.Modal.Render("Create new directory\n\n" + m.input.View())
 	case ModeGoToPath:
 		return m.styles.Modal.Render("Go to path\n\n" + m.input.View())
+	case ModeDiffCommit:
+		return m.styles.Modal.Render("Commit changes\n\n" + m.input.View())
+	case ModeDiffConfirmRestore:
+		return m.styles.Modal.Render("Restore `" + m.pendingDiffAction.Path + "`?\n\nThis discards working tree changes or removes an untracked file.\nPress y to continue.\nPress Esc to cancel.")
+	case ModeDiffConfirmRemove:
+		return m.styles.Modal.Render("Remove `" + m.pendingDiffAction.Path + "`?\n\nTracked files use git rm. Untracked files are deleted from disk.\nPress y to continue.\nPress Esc to cancel.")
 	default:
 		return ""
 	}
@@ -483,6 +581,15 @@ func helpContent() string {
 			{"g", "go to path"},
 			{"c", "open selected file in Navia editor"},
 			{"e", "open selected file externally"},
+			{"D", "open diff mode"},
+		}),
+		helpSection("Diff", [][2]string{
+			{"up/k, down/j", "move changed file selection"},
+			{"ctrl+u / ctrl+d", "scroll diff"},
+			{"s / u", "stage / unstage selected file"},
+			{"R / D", "restore / remove selected file"},
+			{"c / p", "commit / push current branch"},
+			{"r / esc", "refresh / return to tree"},
 		}),
 		helpSection("File Operations", [][2]string{
 			{"r", "rename"},
