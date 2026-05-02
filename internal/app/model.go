@@ -183,6 +183,15 @@ func NewWithSearch(start string, cfg config.Config, search StartupSearch) (Model
 	return m, nil
 }
 
+func NewWithDiff(start string, cfg config.Config) (Model, error) {
+	m, err := New(start, cfg)
+	if err != nil {
+		return Model{}, err
+	}
+	m.StartDiff()
+	return m, nil
+}
+
 func (m Model) Init() tea.Cmd {
 	return autoRefreshCmd()
 }
@@ -204,6 +213,10 @@ func (m *Model) StartSearch(search StartupSearch) {
 	m.applyFilter()
 	m.clampSelection()
 	m.refreshPreview()
+}
+
+func (m *Model) StartDiff() {
+	m.enterDiffMode()
 }
 
 func (m *Model) refresh() error {
