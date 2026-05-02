@@ -351,10 +351,21 @@ func TestDiffHelpersAndGitActions(t *testing.T) {
 	if got := noGit.diffViewport.View(); !strings.Contains(got, "Not inside") {
 		t.Fatalf("no-git diff viewport = %q", got)
 	}
+	noGit.StartDiff()
+	if noGit.mode == ModeDiff || !strings.Contains(noGit.statusMessage, "requires a git") {
+		t.Fatalf("no-git startup diff mode/status = %v/%q", noGit.mode, noGit.statusMessage)
+	}
 
 	m.enterDiffMode()
 	if len(m.diffChanges) < 2 {
 		t.Fatalf("diffChanges = %#v, want tracked and untracked", m.diffChanges)
+	}
+	startup, err := NewWithDiff(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startup.mode != ModeDiff || len(startup.diffChanges) < 2 {
+		t.Fatalf("startup diff mode/changes = %v/%#v", startup.mode, startup.diffChanges)
 	}
 	m.diffSelectedIndex = -1
 	m.clampDiffSelection()
