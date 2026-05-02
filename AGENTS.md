@@ -27,6 +27,7 @@ Build Navia into a professional, safe, open-source terminal file navigator. Good
 - `navia-code-reviewer`: final diff review before merge.
 - `navia-build-engineer`: Go build, test, run, CI, and worktree workflow.
 - `navia-tui-engineer`: Bubble Tea model/update/view work, terminal UX, keybindings, and layout.
+- `navia-render-performance-engineer`: per-frame TUI/editor rendering, allocation discipline, cache bounds, and space-time complexity review.
 - `navia-filesystem-safety-engineer`: copy, move, rename, safe delete, path validation, preview, search, and config safety.
 - `navia-git-release-engineer`: git helpers, repository automation, release, install, and PR hygiene.
 - `navia-docs-engineer`: README, contributor docs, security docs, examples, and public-facing copy.
@@ -40,6 +41,7 @@ Use the smallest skill set that covers the task.
 - Filesystem operations must be predictable, path-bounded, and covered by temp-dir tests.
 - Preserve safe delete as the default; destructive behavior requires explicit code and documentation review.
 - Terminal UI changes must keep keyboard workflows visible, responsive, and usable in small terminals.
+- Per-frame rendering must stay bounded by visible output where possible, with explicit review for allocation growth, cache bounds, and avoidable `O(n^2)` work.
 - Prefer existing package boundaries: `internal/app`, `internal/fs`, `internal/config`, `internal/git`, `internal/shellteach`, and `internal/ui`.
 - Keep root guidance compact; put detailed agent rules in `tools/agents/**` or skills.
 
