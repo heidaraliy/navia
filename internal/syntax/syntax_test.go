@@ -34,6 +34,34 @@ func TestHighlightLineWithSearchHighlightsPlainFallback(t *testing.T) {
 	}
 }
 
+func TestMarkdownRichHighlighting(t *testing.T) {
+	r := New("navia")
+	heading := r.HighlightLine("notes.md", "# Roadmap")
+	if !strings.Contains(heading, markdownH1Style) || !strings.Contains(heading, "# Roadmap") {
+		t.Fatalf("heading highlight = %q", heading)
+	}
+
+	task := r.HighlightLine("notes.md", "- [ ] write docs")
+	if !strings.Contains(task, markdownMarkerStyle) || !strings.Contains(task, markdownOpenStyle) || !strings.Contains(task, "[ ]") {
+		t.Fatalf("task highlight = %q", task)
+	}
+
+	done := r.HighlightLine("notes.md", "1. [x] shipped")
+	if !strings.Contains(done, markdownDoneStyle) || !strings.Contains(done, "[x]") {
+		t.Fatalf("done task highlight = %q", done)
+	}
+
+	inline := r.HighlightLine("notes.md", "Use `navia` from [README](README.md).")
+	if !strings.Contains(inline, markdownCodeStyle) || !strings.Contains(inline, markdownLinkStyle) {
+		t.Fatalf("inline highlight = %q", inline)
+	}
+
+	search := r.HighlightLineWithSearch("notes.md", "## Todo", "todo")
+	if !strings.Contains(search, markdownH2Style) || !strings.Contains(search, "\x1b[48;2;229;231;146m") {
+		t.Fatalf("markdown search highlight = %q", search)
+	}
+}
+
 func TestNamesNewAndStyledSearch(t *testing.T) {
 	names := Names()
 	if strings.Join(names, ",") != "amber,dim,mono,navia" {
