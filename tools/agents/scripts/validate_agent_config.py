@@ -16,6 +16,8 @@ REQUIRED_DOCS = [
     "tools/agents/instructions/index.md",
     "tools/agents/instructions/pre-worktree-pr.instructions.md",
     "tools/agents/instructions/accuracy-pipeline.instructions.md",
+    "tools/agents/instructions/render-performance.instructions.md",
+    ".codex/skills/navia-render-performance-engineer/SKILL.md",
     "tools/agents/templates/pr-body.md",
 ]
 

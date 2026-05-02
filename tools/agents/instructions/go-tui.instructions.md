@@ -4,6 +4,7 @@ Use for Bubble Tea, Lip Gloss, keyboard workflows, layout, and terminal behavior
 
 ## Rules
 
+- Load `navia-render-performance-engineer` and `render-performance.instructions.md` when changing render helpers, editor view paths, syntax highlighting, preview/diff rendering, tabs, or render caches.
 - Keep state transitions in `internal/app` explicit and testable.
 - Preserve keyboard-first workflows and keep help text current.
 - Prefer small pure helpers for selection, filtering, and rendering decisions.
