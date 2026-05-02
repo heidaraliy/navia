@@ -26,6 +26,7 @@ func (m *Model) refreshDiff() {
 		m.diffChanges = nil
 		m.diffSummary = git.Summary{}
 		m.diffViewport.SetContent("Not inside a git repository.")
+		m.diffRefreshSignature = ""
 		return
 	}
 	changes, summary, err := git.Status(m.gitRoot)
@@ -60,19 +61,21 @@ func (m *Model) selectedDiffChange() (git.Change, bool) {
 }
 
 func (m *Model) refreshDiffPreview() {
-	change, ok := m.selectedDiffChange()
-	if !ok {
-		m.diffViewport.SetContent("No modified or untracked files.")
-		m.diffViewport.GotoTop()
-		return
-	}
-	diff, err := git.Diff(m.gitRoot, change, int(m.cfg.PreviewMaxBytes))
-	if err != nil {
-		m.diffViewport.SetContent(err.Error())
-	} else {
-		m.diffViewport.SetContent(formatUnifiedDiff(diff))
-	}
+	content := diffPreviewContent(m.gitRoot, m.diffChanges, m.diffSelectedIndex, int(m.cfg.PreviewMaxBytes))
+	m.diffViewport.SetContent(content)
+	m.diffRefreshSignature = diffRefreshSignature(m.diffChanges, m.diffSummary, m.diffSelectedIndex, content)
 	m.diffViewport.GotoTop()
+}
+
+func diffPreviewContent(gitRoot string, changes []git.Change, selectedIndex int, maxBytes int) string {
+	if len(changes) == 0 || selectedIndex < 0 || selectedIndex >= len(changes) {
+		return "No modified or untracked files."
+	}
+	diff, err := git.Diff(gitRoot, changes[selectedIndex], maxBytes)
+	if err != nil {
+		return err.Error()
+	}
+	return formatUnifiedDiff(diff)
 }
 
 func (m Model) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

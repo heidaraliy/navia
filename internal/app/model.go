@@ -83,45 +83,47 @@ type editorJump struct {
 }
 
 type Model struct {
-	cwd                 string
-	entries             []navfs.FileEntry
-	treeRows            []TreeRow
-	rows                []ResultRow
-	recursiveRows       []ResultRow
-	recursiveRoot       string
-	selectedIndex       int
-	filter              string
-	executedSearchQuery string
-	searchMode          SearchMode
-	mode                Mode
-	helpReturnMode      Mode
-	clipboard           ClipboardState
-	preview             navfs.Preview
-	previewViewport     viewport.Model
-	diffViewport        viewport.Model
-	diffChanges         []git.Change
-	diffSummary         git.Summary
-	diffSelectedIndex   int
-	pendingDiffAction   git.Change
-	helpViewport        viewport.Model
-	editorTabs          []*editor.Buffer
-	activeTab           int
-	jumpBack            []editorJump
-	jumpForward         []editorJump
-	treeHidden          bool
-	focus               FocusPane
-	windowPending       bool
-	input               textinput.Model
-	lastCommandHint     string
-	statusMessage       string
-	cfg                 config.Config
-	gitRoot             string
-	width               int
-	height              int
-	styles              ui.Styles
-	syntax              syntax.Renderer
-	pendingDelete       navfs.FileEntry
-	expandedDirs        map[string]bool
+	cwd                  string
+	entries              []navfs.FileEntry
+	treeRows             []TreeRow
+	rows                 []ResultRow
+	recursiveRows        []ResultRow
+	recursiveRoot        string
+	selectedIndex        int
+	filter               string
+	executedSearchQuery  string
+	searchMode           SearchMode
+	mode                 Mode
+	helpReturnMode       Mode
+	clipboard            ClipboardState
+	preview              navfs.Preview
+	previewViewport      viewport.Model
+	diffViewport         viewport.Model
+	diffChanges          []git.Change
+	diffSummary          git.Summary
+	diffSelectedIndex    int
+	diffRefreshSignature string
+	pendingDiffAction    git.Change
+	helpViewport         viewport.Model
+	editorTabs           []*editor.Buffer
+	activeTab            int
+	jumpBack             []editorJump
+	jumpForward          []editorJump
+	treeHidden           bool
+	focus                FocusPane
+	windowPending        bool
+	input                textinput.Model
+	lastCommandHint      string
+	statusMessage        string
+	treeRefreshSignature string
+	cfg                  config.Config
+	gitRoot              string
+	width                int
+	height               int
+	styles               ui.Styles
+	syntax               syntax.Renderer
+	pendingDelete        navfs.FileEntry
+	expandedDirs         map[string]bool
 }
 
 const (
@@ -158,7 +160,7 @@ func New(start string, cfg config.Config) (Model, error) {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return autoRefreshCmd()
 }
 
 func (m *Model) SetStatus(msg string) {
@@ -179,6 +181,7 @@ func (m *Model) refresh() error {
 	m.clampSelection()
 	m.refreshPreview()
 	m.gitRoot = git.FindRoot(m.cwd)
+	m.treeRefreshSignature = m.currentTreeSignature()
 	return nil
 }
 
