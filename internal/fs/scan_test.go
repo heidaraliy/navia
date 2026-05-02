@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -28,6 +29,35 @@ func TestScanDirSortsDirsFirstAndFiltersHidden(t *testing.T) {
 	}
 }
 
+func TestScanDirErrorsAndSortsWithoutDirsFirst(t *testing.T) {
+	if _, err := ScanDir(filepath.Join(t.TempDir(), "missing"), ScanOptions{}); err == nil {
+		t.Fatal("ScanDir missing directory succeeded")
+	}
+	entries := []FileEntry{
+		{Name: "zdir", IsDir: true},
+		{Name: "afile.txt", IsDir: false},
+	}
+	Sort(entries, false)
+	if entries[0].Name != "afile.txt" {
+		t.Fatalf("entries sorted dirs first despite disabled option: %#v", entries)
+	}
+}
+
+func TestShouldSkipNameHonorsHiddenAndIgnoredNames(t *testing.T) {
+	if ShouldSkipName("", ScanOptions{}) {
+		t.Fatal("empty name should not be skipped")
+	}
+	if !ShouldSkipName(".hidden", ScanOptions{}) {
+		t.Fatal("hidden name should be skipped by default")
+	}
+	if ShouldSkipName(".hidden", ScanOptions{ShowHidden: true}) {
+		t.Fatal("hidden name should be visible when configured")
+	}
+	if !ShouldSkipName("node_modules", ScanOptions{ShowHidden: true, IgnoreNames: map[string]bool{"node_modules": true}}) {
+		t.Fatal("ignored name should be skipped")
+	}
+}
+
 func TestSafeDeleteMovesIntoNaviaTrash(t *testing.T) {
 	dir := t.TempDir()
 	dataHome := t.TempDir()
@@ -48,6 +78,24 @@ func TestSafeDeleteMovesIntoNaviaTrash(t *testing.T) {
 	wantPrefix := filepath.Join(dataHome, "navia", "trash")
 	if !IsSubpath(wantPrefix, target) {
 		t.Fatalf("expected global trash target under %s, got %s", wantPrefix, target)
+	}
+}
+
+func TestGlobalTrashDirUsesHomeWhenXDGDataHomeIsUnset(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	got, err := GlobalTrashDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(got, filepath.Join(".local", "share", "navia", "trash")) {
+		t.Fatalf("GlobalTrashDir = %q", got)
+	}
+}
+
+func TestSafeDeleteErrorsForMissingPath(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	if _, err := SafeDelete(filepath.Join(t.TempDir(), "missing"), ""); err == nil {
+		t.Fatal("SafeDelete missing path succeeded")
 	}
 }
 
@@ -125,6 +173,7 @@ func TestRecursiveSearchSkipsHiddenWhenConfigured(t *testing.T) {
 	hidden := filepath.Join(dir, ".hidden")
 	must(t, os.MkdirAll(hidden, 0o755))
 	must(t, os.WriteFile(filepath.Join(hidden, "needle.txt"), []byte("needle\n"), 0o644))
+	must(t, os.WriteFile(filepath.Join(dir, "visible.txt"), []byte("needle\n"), 0o644))
 
 	fileMatches, err := SearchFiles(dir, "needle", ScanOptions{ShowHidden: false, SortDirsFirst: true})
 	if err != nil {
@@ -138,8 +187,12 @@ func TestRecursiveSearchSkipsHiddenWhenConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(textMatches) != 0 {
-		t.Fatalf("hidden text matches = %#v, want none", textMatches)
+	if len(textMatches) != 1 || textMatches[0].Entry.Name != "visible.txt" {
+		t.Fatalf("text matches = %#v", textMatches)
+	}
+
+	if matches, err := SearchText(dir, "n", 1024, ScanOptions{}); err != nil || matches != nil {
+		t.Fatalf("short query = %#v %v", matches, err)
 	}
 }
 
@@ -164,6 +217,33 @@ func TestRecursiveSearchSkipsIgnoredNames(t *testing.T) {
 	}
 	if len(textMatches) != 0 {
 		t.Fatalf("ignored text matches = %#v, want none", textMatches)
+	}
+}
+
+func TestSearchFilesCapsNonEmptyQueryResults(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < MaxSearchResults+5; i++ {
+		must(t, os.WriteFile(filepath.Join(dir, "needle_"+strconvItoa(i)+".txt"), []byte("x"), 0o644))
+	}
+	matches, err := SearchFiles(dir, "needle", ScanOptions{ShowHidden: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != MaxSearchResults {
+		t.Fatalf("matches = %d want %d", len(matches), MaxSearchResults)
+	}
+}
+
+func TestSearchTextSkipsBinaryAndRespectsDefaultLimit(t *testing.T) {
+	dir := t.TempDir()
+	must(t, os.WriteFile(filepath.Join(dir, "binary.txt"), []byte{'n', 0, 'd'}, 0o644))
+	must(t, os.WriteFile(filepath.Join(dir, "late.txt"), []byte(strings.Repeat("x", 300*1024)+"needle"), 0o644))
+	matches, err := SearchText(dir, "needle", 0, ScanOptions{ShowHidden: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("matches beyond default limit or binary should be skipped: %#v", matches)
 	}
 }
 
