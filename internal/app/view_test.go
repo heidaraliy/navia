@@ -93,6 +93,31 @@ func TestCommandCueUsesModeColorWithoutBackground(t *testing.T) {
 	}
 }
 
+func TestFooterHintsFollowMode(t *testing.T) {
+	m := Model{styles: ui.NewStyles()}
+	hints := m.footerHints()
+	if len(hints) == 0 || hints[0] != (footerHint{"q", "quit"}) {
+		t.Fatalf("normal footer hints = %#v", hints)
+	}
+	if got := m.renderFooterHint(footerHint{"auto", ""}); !strings.Contains(got, "auto") || strings.Contains(got, "auto  ") {
+		t.Fatalf("empty-label footer hint = %q", got)
+	}
+
+	m.mode = ModeDiff
+	hints = m.footerHints()
+	if len(hints) < 2 || hints[1] != (footerHint{"s", "stage"}) {
+		t.Fatalf("diff footer hints = %#v", hints)
+	}
+
+	m.mode = ModeNormal
+	m.focus = FocusEditor
+	m.editorTabs = []*editor.Buffer{editor.NewScratch("a.go")}
+	hints = m.footerHints()
+	if len(hints) == 0 || hints[0] != (footerHint{":w", "save"}) {
+		t.Fatalf("editor footer hints = %#v", hints)
+	}
+}
+
 func TestClipStyledDoesNotBreakANSIEscapes(t *testing.T) {
 	input := "\x1b[38;2;255;0;255mabcdef\x1b[0m"
 	got := clipStyled(input, 3)
