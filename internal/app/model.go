@@ -98,6 +98,7 @@ type Model struct {
 	cwd                  string
 	entries              []navfs.FileEntry
 	treeRows             []TreeRow
+	treeRowByPath        map[string]TreeRow
 	rows                 []ResultRow
 	recursiveRows        []ResultRow
 	recursiveRoot        string
@@ -234,6 +235,7 @@ func (m *Model) refreshTreeData() error {
 	}
 	m.entries = entries
 	m.treeRows = m.buildTreeRows()
+	m.rebuildTreeRowIndex()
 	m.applyFilter()
 	m.clampSelection()
 	m.gitRoot = git.FindRoot(m.cwd)
@@ -475,12 +477,28 @@ func (m Model) treeRowsToResultRows(rows []TreeRow) []ResultRow {
 }
 
 func (m Model) rowForPath(path string) (TreeRow, bool) {
+	if m.treeRowByPath != nil {
+		row, ok := m.treeRowByPath[path]
+		return row, ok
+	}
 	for _, row := range m.treeRows {
 		if row.Entry.Path == path {
 			return row, true
 		}
 	}
 	return TreeRow{}, false
+}
+
+func (m *Model) rebuildTreeRowIndex() {
+	if len(m.treeRows) == 0 {
+		m.treeRowByPath = nil
+		return
+	}
+	rows := make(map[string]TreeRow, len(m.treeRows))
+	for _, row := range m.treeRows {
+		rows[row.Entry.Path] = row
+	}
+	m.treeRowByPath = rows
 }
 
 func (m *Model) enterMode(mode Mode, prompt, value string) {
