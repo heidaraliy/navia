@@ -24,8 +24,9 @@ is meant to be the terminal home base for small-to-medium project work.
 - Recursive search: file-name search and text search from inside the UI, plus
   startup modes for opening directly into either search surface.
 - A built-in modal editor: tabs, dirty-state tracking, vim-style normal/insert/
-  visual modes, counts, motions, yank/delete/paste, undo/redo, search,
-  substitution, save/quit commands, and jump history.
+  visual modes, counts, motions, yank/delete/paste, undo/redo, rich Markdown
+  highlighting with task-checkbox toggles, search, substitution, save/quit
+  commands, and jump history.
 - Lightweight code intelligence: optional Go LSP support through `gopls` for
   definition and reference jumps.
 - Git review mode: status summary, formatted diff previews, auto-refresh,
@@ -156,6 +157,7 @@ Editor keys:
 - `i`, `a`, `I`, `A`, `o`, `O`: enter insert mode.
 - `h`, `j`, `k`, `l`, `w`, `b`, `e`: move the cursor.
 - `gg`, `G`, `:number`: jump by file position.
+- `space`: toggle the current Markdown task checkbox.
 - `v` / `V`: visual or visual-line selection.
 - `y`, `d`, `c`, `p`: yank, delete, change, and paste.
 - `u` / `ctrl+r`: undo and redo.

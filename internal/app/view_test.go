@@ -19,7 +19,7 @@ func TestTopHeightIsCompact(t *testing.T) {
 
 func TestHelpIsGroupedByMode(t *testing.T) {
 	help := helpContent()
-	for _, want := range []string{"Global", "Tree", "Diff", "Search", "Editor Normal", "Editor Tabs", "Windows And History", "ctrl+w o", "L / shift+enter", "e / c"} {
+	for _, want := range []string{"Global", "Tree", "Diff", "Search", "Editor Normal", "Editor Tabs", "Windows And History", "ctrl+w o", "L / shift+enter", "e / c", "toggle Markdown task checkbox"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help missing %q:\n%s", want, help)
 		}
@@ -116,6 +116,12 @@ func TestFooterHintsFollowMode(t *testing.T) {
 	hints = m.footerHints()
 	if len(hints) == 0 || hints[0] != (footerHint{":w", "save"}) {
 		t.Fatalf("editor footer hints = %#v", hints)
+	}
+
+	m.editorTabs = []*editor.Buffer{editor.NewScratch("tasks.md")}
+	hints = m.footerHints()
+	if len(hints) == 0 || hints[0] != (footerHint{"space", "task"}) {
+		t.Fatalf("markdown editor footer hints = %#v", hints)
 	}
 }
 
