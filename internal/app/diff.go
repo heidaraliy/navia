@@ -125,8 +125,7 @@ func (m Model) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m.guardedQuit()
 	case "?":
-		m.helpReturnMode = ModeDiff
-		m.mode = ModeHelp
+		m.enterHelpMode(ModeDiff)
 	case "up", "k":
 		if m.diffSelectedIndex > 0 {
 			m.diffSelectedIndex--

@@ -49,6 +49,37 @@ func TestPageKeysMoveTreeSelectionInChunks(t *testing.T) {
 	}
 }
 
+func TestHelpMenuPagesWithCtrlDAndCtrlU(t *testing.T) {
+	m, err := New(t.TempDir(), config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.width = 80
+	m.height = 16
+	m.resizeHelp()
+
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	got := updated.(Model)
+	if got.mode != ModeHelp {
+		t.Fatalf("mode = %v, want ModeHelp", got.mode)
+	}
+	if got.helpViewport.TotalLineCount() <= got.helpViewport.Height {
+		t.Fatalf("help content lines = %d, height = %d; test needs scrollable help", got.helpViewport.TotalLineCount(), got.helpViewport.Height)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	got = updated.(Model)
+	if got.helpViewport.YOffset == 0 {
+		t.Fatalf("help YOffset after ctrl+d = %d, want paged down", got.helpViewport.YOffset)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	got = updated.(Model)
+	if got.helpViewport.YOffset != 0 {
+		t.Fatalf("help YOffset after ctrl+u = %d, want top", got.helpViewport.YOffset)
+	}
+}
+
 func TestDiffModeListsChangesAndEscReturnsToTree(t *testing.T) {
 	root := initAppRepo(t)
 	writeAppFile(t, filepath.Join(root, "tracked.txt"), "one\n")

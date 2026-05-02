@@ -49,6 +49,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		if m.mode == ModeHelp {
+			m.helpViewport.SetContent(helpContent())
 			switch msg.String() {
 			case "esc", "q", "?":
 				m.mode = m.helpReturnMode
@@ -189,12 +190,18 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		return m, m.openSelectedInEditor()
 	case "?":
-		m.helpReturnMode = ModeNormal
-		m.mode = ModeHelp
+		m.enterHelpMode(ModeNormal)
 	case "D":
 		m.enterDiffMode()
 	}
 	return m, nil
+}
+
+func (m *Model) enterHelpMode(returnMode Mode) {
+	m.helpReturnMode = returnMode
+	m.mode = ModeHelp
+	m.helpViewport.SetContent(helpContent())
+	m.helpViewport.GotoTop()
 }
 
 func (m *Model) moveSelection(delta int) tea.Cmd {
@@ -540,6 +547,7 @@ func (m *Model) resizeHelp() {
 	if m.helpViewport.Height < 8 {
 		m.helpViewport.Height = 8
 	}
+	m.helpViewport.SetContent(helpContent())
 }
 
 func (m Model) paneWidths() (int, int) {
