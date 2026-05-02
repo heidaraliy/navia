@@ -150,7 +150,7 @@ func TestVisibleExpandsTabsUnderCursor(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("lines = %d", len(lines))
 	}
-	if got, want := lines[0], `1 █   "os"`; got != want {
+	if got, want := lines[0], "1 \x1b[7m \x1b[27m   \"os\""; got != want {
 		t.Fatalf("rendered = %q, want %q", got, want)
 	}
 }
