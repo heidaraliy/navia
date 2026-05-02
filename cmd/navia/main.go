@@ -37,6 +37,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("navia", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	showVersion := flags.Bool("version", false, "show version")
+	diffMode := flags.Bool("d", false, "start in diff mode")
 	textSearch := flags.String("s", "", "start in recursive text search with query")
 	fileSearch := flags.String("f", "", "start in recursive file-name search with query")
 	if err := flags.Parse(args); err != nil {
@@ -49,6 +50,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if *textSearch != "" && *fileSearch != "" {
 		fmt.Fprintln(stderr, "navia: use only one of --s or --f")
+		return 2
+	}
+	if *diffMode && (*textSearch != "" || *fileSearch != "") {
+		fmt.Fprintln(stderr, "navia: use only one startup mode")
 		return 2
 	}
 
@@ -65,6 +70,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	cfg, warning := config.Load()
 	var model app.Model
 	switch {
+	case *diffMode:
+		model, err = app.NewWithDiff(abs, cfg)
 	case *textSearch != "":
 		model, err = app.NewWithSearch(abs, cfg, app.StartupSearch{Mode: app.SearchText, Query: *textSearch})
 	case *fileSearch != "":
