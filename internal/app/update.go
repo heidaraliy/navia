@@ -223,6 +223,10 @@ func (m *Model) openSelected() {
 		}
 		return
 	}
+	if m.filter != "" && m.executedSearchQuery == m.filter {
+		_ = m.openEditorTab(entry.Path)
+		return
+	}
 	m.statusMessage = "Press `e` to open this file in your editor."
 }
 
