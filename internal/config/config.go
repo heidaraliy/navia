@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -14,6 +15,38 @@ type Config struct {
 	SafeDelete      bool
 	SortDirsFirst   bool
 	PreviewMaxBytes int64
+	EditorMaxBytes  int64
+	EnableLSP       bool
+	GoplsCommand    string
+	Theme           string
+}
+
+func SaveTheme(theme string) error {
+	path := Path()
+	if path == "" {
+		return fmt.Errorf("could not resolve config path")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	var lines []string
+	if data, err := os.ReadFile(path); err == nil {
+		lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	}
+	found := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "theme") {
+			if key, _, ok := strings.Cut(trimmed, "="); ok && strings.TrimSpace(key) == "theme" {
+				lines[i] = `theme = "` + theme + `"`
+				found = true
+			}
+		}
+	}
+	if !found {
+		lines = append(lines, `theme = "`+theme+`"`)
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
 func Default() Config {
@@ -30,6 +63,10 @@ func Default() Config {
 		SafeDelete:      true,
 		SortDirsFirst:   true,
 		PreviewMaxBytes: 256 * 1024,
+		EditorMaxBytes:  1024 * 1024,
+		EnableLSP:       true,
+		GoplsCommand:    "gopls",
+		Theme:           "navia",
 	}
 }
 
@@ -84,6 +121,20 @@ func Load() (Config, string) {
 		case "preview_max_bytes":
 			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
 				cfg.PreviewMaxBytes = n
+			}
+		case "editor_max_bytes":
+			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
+				cfg.EditorMaxBytes = n
+			}
+		case "enable_lsp":
+			cfg.EnableLSP = parseBool(value, cfg.EnableLSP)
+		case "gopls_command":
+			if value != "" {
+				cfg.GoplsCommand = value
+			}
+		case "theme":
+			if value != "" {
+				cfg.Theme = value
 			}
 		}
 	}
