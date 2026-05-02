@@ -10,6 +10,7 @@ import (
 type ScanOptions struct {
 	ShowHidden    bool
 	SortDirsFirst bool
+	IgnoreNames   map[string]bool
 }
 
 func ScanDir(dir string, opts ScanOptions) ([]FileEntry, error) {
@@ -19,7 +20,7 @@ func ScanDir(dir string, opts ScanOptions) ([]FileEntry, error) {
 	}
 	entries := make([]FileEntry, 0, len(items))
 	for _, item := range items {
-		if !opts.ShowHidden && strings.HasPrefix(item.Name(), ".") {
+		if ShouldSkipName(item.Name(), opts) {
 			continue
 		}
 		info, err := item.Info()
@@ -39,4 +40,14 @@ func Sort(entries []FileEntry, dirsFirst bool) {
 		}
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
+}
+
+func ShouldSkipName(name string, opts ScanOptions) bool {
+	if name == "" {
+		return false
+	}
+	if !opts.ShowHidden && strings.HasPrefix(name, ".") {
+		return true
+	}
+	return opts.IgnoreNames != nil && opts.IgnoreNames[name]
 }

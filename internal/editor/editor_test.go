@@ -63,6 +63,25 @@ func TestInsertUndoRedoAndSave(t *testing.T) {
 	}
 }
 
+func TestInsertModeTypingUsesOneUndoSnapshot(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{""}
+	b.Dirty = false
+
+	b.HandleKey("i")
+	b.HandleKey("a")
+	b.HandleKey("b")
+	b.HandleKey("c")
+	if len(b.undo) != 1 {
+		t.Fatalf("undo snapshots while typing = %d, want 1", len(b.undo))
+	}
+	b.HandleKey("esc")
+	b.HandleKey("u")
+	if got := b.Value(); got != "" {
+		t.Fatalf("undo value = %q, want empty", got)
+	}
+}
+
 func TestVisualLineDeleteYanksBlock(t *testing.T) {
 	b := NewScratch("x.txt")
 	b.Lines = []string{"one", "two", "three"}
