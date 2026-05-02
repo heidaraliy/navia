@@ -545,8 +545,8 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 	if len(highlighted) != 4 || !strings.Contains(highlighted[0], "\x1b[31m") {
 		t.Fatalf("highlighted visible = %#v", highlighted)
 	}
-	if !strings.Contains(highlighted[1], "\x1b[31mt█o\x1b[0m") {
-		t.Fatalf("highlighted cursor lost style = %#v", highlighted)
+	if !strings.Contains(highlighted[1], "\x1b[31mt\x1b[7mw\x1b[27mo\x1b[0m") {
+		t.Fatalf("highlighted cursor lost character/style = %#v", highlighted)
 	}
 	if got := b.Visible(0, 2); len(got) != 2 || got[0] != "" {
 		t.Fatalf("zero-width visible = %#v", got)
@@ -599,10 +599,13 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 	if got := renderLine("ab", -1, false); got != "ab" {
 		t.Fatalf("renderLine no cursor = %q", got)
 	}
+	if got := renderLine("ab", 1, false); got != "a\x1b[7mb\x1b[27m" {
+		t.Fatalf("renderLine cursor character = %q", got)
+	}
 	if got := renderLine("ab", 2, true); got != "ab█" {
 		t.Fatalf("renderLine insert end = %q", got)
 	}
-	if got := renderHighlightedLine("\x1b[31mword\x1b[0m", 1, false); got != "\x1b[31mw█rd\x1b[0m" {
+	if got := renderHighlightedLine("\x1b[31mword\x1b[0m", 1, false); got != "\x1b[31mw\x1b[7mo\x1b[27mrd\x1b[0m" {
 		t.Fatalf("renderHighlightedLine cursor style = %q", got)
 	}
 	if got := tabWidth(5); got != 3 {
@@ -798,7 +801,7 @@ func TestRemainingVisualAndWrappingEdges(t *testing.T) {
 		t.Fatalf("visual-line toggle mode=%v visualRow=%d", b.Mode, b.visualRow)
 	}
 
-	if got := renderLine("\tab", 0, false); got != "█   ab" {
+	if got := renderLine("\tab", 0, false); got != "\x1b[7m \x1b[27m   ab" {
 		t.Fatalf("renderLine tab cursor = %q", got)
 	}
 	window, col := visibleLineWindow(strings.Repeat("x", 5000), 6000, 20, 1)
