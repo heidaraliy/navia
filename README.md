@@ -37,7 +37,36 @@ is meant to be the terminal home base for small-to-medium project work.
 
 ## Install
 
-Navia requires Go 1.22 or newer.
+Users do not need Go to run Navia. Download the archive for your platform from
+the latest GitHub release, extract it, and put the `navia` binary somewhere on
+your `PATH`.
+
+Example for Apple Silicon Macs:
+
+```bash
+tar -xzf navia_0.1.0_darwin_arm64.tar.gz
+mkdir -p ~/.local/bin
+install -m 0755 navia_0.1.0_darwin_arm64/navia ~/.local/bin/navia
+navia --version
+```
+
+Use the matching archive name for other platforms: `darwin_amd64` for Intel
+Macs, `linux_amd64` for most Linux PCs, and `linux_arm64` for ARM Linux
+machines.
+
+Windows:
+
+1. Download `navia_0.1.0_windows_amd64.zip`, or `windows_arm64` for ARM
+   Windows.
+2. Extract the zip.
+3. Move `navia.exe` to a directory on your `PATH`.
+4. Run `navia --version` in PowerShell.
+
+SHA-256 checksums are attached to each tagged release.
+
+### Install From Source
+
+Source installs require Go 1.22 or newer.
 
 For the latest tagged Go module release:
 
