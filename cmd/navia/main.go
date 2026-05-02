@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -15,29 +16,50 @@ import (
 
 var version = "dev"
 
+type programRunner interface {
+	Run() (tea.Model, error)
+}
+
+var (
+	exitFn     = os.Exit
+	newProgram = func(model app.Model) programRunner {
+		return tea.NewProgram(model, tea.WithAltScreen())
+	}
+)
+
 func main() {
-	showVersion := flag.Bool("version", false, "show version")
-	textSearch := flag.String("s", "", "start in recursive text search with query")
-	fileSearch := flag.String("f", "", "start in recursive file-name search with query")
-	flag.Parse()
+	if code := run(os.Args[1:], os.Stdout, os.Stderr); code != 0 {
+		exitFn(code)
+	}
+}
+
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("navia", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	showVersion := flags.Bool("version", false, "show version")
+	textSearch := flags.String("s", "", "start in recursive text search with query")
+	fileSearch := flags.String("f", "", "start in recursive file-name search with query")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
 
 	if *showVersion {
-		fmt.Println("navia " + displayVersion())
-		return
+		fmt.Fprintln(stdout, "navia "+displayVersion())
+		return 0
 	}
 	if *textSearch != "" && *fileSearch != "" {
-		fmt.Fprintln(os.Stderr, "navia: use only one of --s or --f")
-		os.Exit(2)
+		fmt.Fprintln(stderr, "navia: use only one of --s or --f")
+		return 2
 	}
 
 	root := "."
-	if flag.NArg() > 0 {
-		root = flag.Arg(0)
+	if flags.NArg() > 0 {
+		root = flags.Arg(0)
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "navia: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "navia: %v\n", err)
+		return 1
 	}
 
 	cfg, warning := config.Load()
@@ -51,18 +73,19 @@ func main() {
 		model, err = app.New(abs, cfg)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "navia: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "navia: %v\n", err)
+		return 1
 	}
 	if warning != "" {
 		model.SetStatus(warning)
 	}
 
-	program := tea.NewProgram(model, tea.WithAltScreen())
+	program := newProgram(model)
 	if _, err := program.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "navia: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(stderr, "navia: %v\n", err)
+		return 1
 	}
+	return 0
 }
 
 func displayVersion() string {
