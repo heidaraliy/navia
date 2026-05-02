@@ -996,8 +996,53 @@ func TestPreviewRenderBoundsAndNotices(t *testing.T) {
 	if got, clipped := clipPreviewLine("abc", 0); got != "abc" || clipped {
 		t.Fatalf("clipPreviewLine short = %q/%v", got, clipped)
 	}
+	if got, clipped := clipPreviewLine(strings.Repeat("x", 5000)+"界tail", 5001); !clipped || !strings.Contains(got, "界") || strings.Contains(got, "tail") {
+		t.Fatalf("clipPreviewLine unicode long = %q/%v", got[len(got)-min(len(got), 16):], clipped)
+	}
 	if got := previewRenderNotice(false, true, 10); !strings.Contains(got, "clipped long lines") {
 		t.Fatalf("long-line notice = %q", got)
+	}
+}
+
+func TestTreeRowIndexRebuildsForPathLookup(t *testing.T) {
+	m := Model{
+		treeRows: []TreeRow{
+			{Entry: navfs.FileEntry{Path: "/tmp/root", Name: "root"}, Depth: 0},
+			{Entry: navfs.FileEntry{Path: "/tmp/root/deep/file.txt", Name: "file.txt"}, Depth: 12},
+		},
+	}
+	m.rebuildTreeRowIndex()
+	row, ok := m.rowForPath("/tmp/root/deep/file.txt")
+	if !ok || row.Depth != 12 {
+		t.Fatalf("rowForPath indexed row = %#v/%v", row, ok)
+	}
+	if _, ok := m.rowForPath("/tmp/root/missing.txt"); ok {
+		t.Fatal("rowForPath should not find missing indexed path")
+	}
+	m.treeRows = nil
+	m.rebuildTreeRowIndex()
+	if m.treeRowByPath != nil {
+		t.Fatalf("empty tree row index = %#v, want nil", m.treeRowByPath)
+	}
+	fallback := Model{treeRows: []TreeRow{{Entry: navfs.FileEntry{Path: "/tmp/fallback", Name: "fallback"}, Depth: 3}}}
+	row, ok = fallback.rowForPath("/tmp/fallback")
+	if !ok || row.Depth != 3 {
+		t.Fatalf("rowForPath fallback row = %#v/%v", row, ok)
+	}
+}
+
+func TestAppByteAfterRunesBounds(t *testing.T) {
+	if end, truncated := byteAfterRunes("", 0); end != 0 || truncated {
+		t.Fatalf("empty zero budget = %d/%v", end, truncated)
+	}
+	if end, truncated := byteAfterRunes("abc", 0); end != 0 || !truncated {
+		t.Fatalf("nonempty zero budget = %d/%v", end, truncated)
+	}
+	if end, truncated := byteAfterRunes("abc", 5); end != len("abc") || truncated {
+		t.Fatalf("short line = %d/%v", end, truncated)
+	}
+	if end, truncated := byteAfterRunes("a界b", 2); end != len("a界") || !truncated {
+		t.Fatalf("unicode truncate = %d/%v", end, truncated)
 	}
 }
 

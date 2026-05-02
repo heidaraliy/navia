@@ -362,6 +362,8 @@ func (m Model) renderDiffList(width int) string {
 		start = 0
 	}
 	lines := make([]string, 0, innerH)
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	for i := start; i < len(m.diffChanges) && len(lines) < innerH; i++ {
 		change := m.diffChanges[i]
 		label := fmt.Sprintf("%s %-9s %s", diffStatusText(change), diffKindLabel(change), change.Path)
@@ -371,9 +373,9 @@ func (m Model) renderDiffList(width int) string {
 		line := truncate(label, innerW)
 		switch change.Kind {
 		case git.ChangeAdded, git.ChangeUntracked:
-			line = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(line)
+			line = addedStyle.Render(line)
 		case git.ChangeDeleted:
-			line = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(line)
+			line = deletedStyle.Render(line)
 		default:
 			line = m.styles.TreePane.Render(line)
 		}
@@ -403,12 +405,14 @@ func (m Model) renderDiffPane(width int) string {
 func (m Model) renderDiffContent() string {
 	content := m.diffViewport.View()
 	lines := strings.Split(content, "\n")
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	for i, line := range lines {
 		switch diffLineStyle(line) {
 		case "add":
-			lines[i] = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render(line)
+			lines[i] = addedStyle.Render(line)
 		case "remove":
-			lines[i] = lipgloss.NewStyle().Foreground(lipgloss.Color("203")).Render(line)
+			lines[i] = deletedStyle.Render(line)
 		case "hunk":
 			lines[i] = m.styles.Highlight.Render(line)
 		case "header":
@@ -523,11 +527,25 @@ func clipPreviewLine(line string, maxRunes int) (string, bool) {
 	if maxRunes <= 0 {
 		maxRunes = 80
 	}
-	runes := []rune(line)
-	if len(runes) <= maxRunes {
+	end, truncated := byteAfterRunes(line, maxRunes)
+	if !truncated {
 		return line, false
 	}
-	return string(runes[:maxRunes]) + " ...", true
+	return line[:end] + " ...", true
+}
+
+func byteAfterRunes(s string, maxRunes int) (int, bool) {
+	if maxRunes <= 0 {
+		return 0, s != ""
+	}
+	count := 0
+	for i := range s {
+		if count == maxRunes {
+			return i, true
+		}
+		count++
+	}
+	return len(s), false
 }
 
 func previewRenderNotice(lines, longLine bool, limit int) string {

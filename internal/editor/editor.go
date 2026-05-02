@@ -796,36 +796,84 @@ func visibleLineWindow(line string, col, width, height int) (string, int) {
 	if budget > 4000 {
 		budget = 4000
 	}
-	runes := []rune(line)
-	if len(runes) <= budget {
+	end, truncated := byteAfterRunes(line, budget)
+	if !truncated {
 		return line, col
 	}
 	if col < 0 {
-		return string(runes[:budget]) + " ...", col
+		return line[:end] + " ...", col
 	}
-	if col > len(runes) {
-		col = len(runes)
+	if col > len(line) {
+		col = len(line)
 	}
-	start := col - budget/2
-	if start < 0 {
-		start = 0
-	}
-	if start+budget > len(runes) {
-		start = len(runes) - budget
-	}
-	if start < 0 {
-		start = 0
-	}
-	end := min(len(runes), start+budget)
+	col = clampByteToRuneBoundary(line, col)
+	start := byteBeforeRunes(line, col, budget/2)
+	end = byteAfterRunesFrom(line, start, budget)
 	prefix := ""
 	if start > 0 {
 		prefix = "... "
 	}
 	suffix := ""
-	if end < len(runes) {
+	if end < len(line) {
 		suffix = " ..."
 	}
-	return prefix + string(runes[start:end]) + suffix, col - start + len([]rune(prefix))
+	return prefix + line[start:end] + suffix, col - start + len(prefix)
+}
+
+func byteAfterRunes(s string, maxRunes int) (int, bool) {
+	if maxRunes <= 0 {
+		return 0, s != ""
+	}
+	count := 0
+	for i := range s {
+		if count == maxRunes {
+			return i, true
+		}
+		count++
+	}
+	return len(s), false
+}
+
+func byteAfterRunesFrom(s string, start, maxRunes int) int {
+	if start < 0 {
+		start = 0
+	}
+	if start >= len(s) || maxRunes <= 0 {
+		return start
+	}
+	end, _ := byteAfterRunes(s[start:], maxRunes)
+	return start + end
+}
+
+func byteBeforeRunes(s string, end, maxRunes int) int {
+	if end <= 0 {
+		return 0
+	}
+	if end > len(s) {
+		end = len(s)
+	}
+	start := end
+	for i := 0; i < maxRunes && start > 0; i++ {
+		_, size := utf8.DecodeLastRuneInString(s[:start])
+		if size == 0 {
+			return start
+		}
+		start -= size
+	}
+	return start
+}
+
+func clampByteToRuneBoundary(s string, col int) int {
+	if col < 0 {
+		return 0
+	}
+	if col > len(s) {
+		return len(s)
+	}
+	for col > 0 && col < len(s) && !utf8.RuneStart(s[col]) {
+		col--
+	}
+	return col
 }
 
 func (b *Buffer) startVisual(mode Mode) {
@@ -1667,24 +1715,25 @@ func wrapDisplayLimit(s, continuation string, width, maxLines int) []string {
 		}
 		return wrapped
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
+	_, truncated := byteAfterRunes(s, width)
+	if !truncated {
 		return []string{s}
 	}
 	var lines []string
 	first := true
-	for len(runes) > 0 && (maxLines <= 0 || len(lines) < maxLines) {
+	remaining := s
+	for len(remaining) > 0 && (maxLines <= 0 || len(lines) < maxLines) {
 		prefix := ""
 		if !first {
 			prefix = continuation
 		}
-		limit := width - len([]rune(prefix))
+		limit := width - utf8.RuneCountInString(prefix)
 		if limit < 1 {
 			limit = 1
 		}
-		n := min(limit, len(runes))
-		lines = append(lines, prefix+string(runes[:n]))
-		runes = runes[n:]
+		end, _ := byteAfterRunes(remaining, limit)
+		lines = append(lines, prefix+remaining[:end])
+		remaining = remaining[end:]
 		first = false
 	}
 	return lines
