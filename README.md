@@ -1,18 +1,7 @@
 # Navia
 
 Navia is a terminal micro-IDE: a fast project explorer, previewer, recursive
-search tool, modal editor, git review surface, and shell-command teacher in one
-keyboard-driven Go TUI.
-
-The goal is the useful part of a VS Code-style project workspace without the
-heavy startup path, extension bloat, and background machinery that can make a
-simple edit feel slow. Neovim is excellent, but it asks you to become a power
-user and assemble the surrounding project UI yourself. Navia takes the opposite
-shape: open a directory and get the project tree, previews, editing, search,
-git, and file operations immediately.
-
-Navia is early-stage software, but it is already more than a file navigator. It
-is meant to be the terminal home base for small-to-medium project work.
+search tool, modal editor, and git review surface, in one keyboard-driven Go TUI.
 
 ## What Navia Gives You
 
@@ -33,8 +22,6 @@ is meant to be the terminal home base for small-to-medium project work.
   stage/unstage, restore/remove, commit, and push from the same interface.
 - Safe file operations: create, rename, copy, cut, paste, and safe delete, with
   safe delete moving files into Navia trash by default.
-- Shell literacy: after file operations, Navia shows the equivalent shell command
-  so the visual workflow still teaches the command-line workflow.
 
 ## Install
 
