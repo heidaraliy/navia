@@ -388,9 +388,22 @@ func (m *Model) reloadActiveIfChanged() {
 
 func editorModeLabel(buf *editor.Buffer) string {
 	if buf == nil {
-		return "Normal"
+		return "NORMAL"
 	}
-	return buf.Mode.String()
+	switch buf.Mode {
+	case editor.Insert:
+		return "INSERT"
+	case editor.Visual:
+		return "VISUAL"
+	case editor.VisualLine:
+		return "VISUAL-LINE"
+	case editor.Command:
+		return "EXEC"
+	case editor.Search:
+		return "SEARCH"
+	default:
+		return "NORMAL"
+	}
 }
 
 func tabLabel(tab *editor.Buffer) string {
