@@ -66,6 +66,17 @@ func TestRunRejectsConflictingSearchModes(t *testing.T) {
 	}
 }
 
+func TestRunRejectsConflictingStartupModes(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--d", "-s", "needle"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "one startup mode") {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
+
 func TestRunRejectsBadFlags(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"--missing"}, &stdout, &stderr)
@@ -86,7 +97,7 @@ func TestRunStartsProgramWithSearchModesAndConfigWarning(t *testing.T) {
 	oldNewProgram := newProgram
 	defer func() { newProgram = oldNewProgram }()
 
-	for _, args := range [][]string{{dir}, {"-s", "needle", dir}, {"-f", "nav", dir}} {
+	for _, args := range [][]string{{dir}, {"-s", "needle", dir}, {"-f", "nav", dir}, {"--d", dir}} {
 		called := false
 		newProgram = func(model app.Model) programRunner {
 			called = true
