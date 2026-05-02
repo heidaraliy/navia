@@ -1,0 +1,263 @@
+package editor
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+func TestOpenRefusesBinaryAndLargeFiles(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.WriteFile(bin, []byte{'a', 0, 'b'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(bin, 1024); !errors.Is(err, ErrBinary) {
+		t.Fatalf("expected binary refusal, got %v", err)
+	}
+	large := filepath.Join(dir, "large.txt")
+	if err := os.WriteFile(large, []byte("abcdef"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(large, 3); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("expected large refusal, got %v", err)
+	}
+}
+
+func TestInsertUndoRedoAndSave(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(path, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.HandleKey("A")
+	b.HandleKey("!")
+	b.HandleKey("esc")
+	if got := b.Value(); got != "hello!" {
+		t.Fatalf("value = %q", got)
+	}
+	b.HandleKey("u")
+	if got := b.Value(); got != "hello" {
+		t.Fatalf("undo value = %q", got)
+	}
+	b.HandleKey("ctrl+r")
+	if got := b.Value(); got != "hello!" {
+		t.Fatalf("redo value = %q", got)
+	}
+	if err := b.Save(false); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "hello!" {
+		t.Fatalf("saved = %q", data)
+	}
+}
+
+func TestVisualLineDeleteYanksBlock(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"one", "two", "three"}
+	b.Dirty = false
+	b.HandleKey("V")
+	b.HandleKey("j")
+	b.HandleKey("d")
+	if b.Register != "one\ntwo\n" {
+		t.Fatalf("register = %q", b.Register)
+	}
+	if got := b.Value(); got != "three" {
+		t.Fatalf("value = %q", got)
+	}
+}
+
+func TestExGotoAndSubstitute(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"alpha", "beta beta", "gamma"}
+	if act := b.Execute("2"); act.Kind != ActionNone || b.CursorLine() != 2 {
+		t.Fatalf("goto action=%v line=%d", act.Kind, b.CursorLine())
+	}
+	if act := b.Execute("s/beta/delta/"); act.Kind != ActionNone {
+		t.Fatalf("sub action=%v msg=%q", act.Kind, act.Message)
+	}
+	if got := b.Lines[1]; got != "delta beta" {
+		t.Fatalf("line = %q", got)
+	}
+	if act := b.Execute("%s/a/A/g"); act.Kind != ActionNone {
+		t.Fatalf("global sub action=%v msg=%q", act.Kind, act.Message)
+	}
+	if got := b.Value(); got != "AlphA\ndeltA betA\ngAmmA" {
+		t.Fatalf("value = %q", got)
+	}
+}
+
+func TestSaveDetectsExternalChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(path, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Open(path, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(time.Millisecond)
+	if err := os.WriteFile(path, []byte("external"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.HandleKey("A")
+	b.HandleKey("b")
+	if err := b.Save(false); !errors.Is(err, ErrChanged) {
+		t.Fatalf("expected changed error, got %v", err)
+	}
+	if err := b.Save(true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVisibleExpandsTabsUnderCursor(t *testing.T) {
+	b := NewScratch("x.go")
+	b.Lines = []string{"\t\"os\""}
+	b.Row = 0
+	b.Col = 0
+	lines := b.Visible(40, 1)
+	if len(lines) != 1 {
+		t.Fatalf("lines = %d", len(lines))
+	}
+	if got, want := lines[0], `1 █   "os"`; got != want {
+		t.Fatalf("rendered = %q, want %q", got, want)
+	}
+}
+
+func TestCtrlDAndCtrlUPageMovement(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}
+	b.HandleKey("ctrl+d")
+	if b.Row != 10 {
+		t.Fatalf("row after ctrl+d = %d", b.Row)
+	}
+	b.HandleKey("ctrl+u")
+	if b.Row != 0 {
+		t.Fatalf("row after ctrl+u = %d", b.Row)
+	}
+}
+
+func TestBufferAndJumpCommands(t *testing.T) {
+	b := NewScratch("x.txt")
+	cases := map[string]ActionKind{
+		"bn":      ActionNextTab,
+		"bnext":   ActionNextTab,
+		"bp":      ActionPrevTab,
+		"bprev":   ActionPrevTab,
+		"bl":      ActionListTabs,
+		"buffers": ActionListTabs,
+		"ls":      ActionListTabs,
+	}
+	for cmd, want := range cases {
+		if got := b.Execute(cmd).Kind; got != want {
+			t.Fatalf(":%s = %v, want %v", cmd, got, want)
+		}
+	}
+	if got := b.HandleKey("ctrl+o").Kind; got != ActionJumpBack {
+		t.Fatalf("ctrl+o = %v", got)
+	}
+	if got := b.HandleKey("tab").Kind; got != ActionJumpForward {
+		t.Fatalf("tab/ctrl+i = %v", got)
+	}
+}
+
+func TestFindMotionsAndRepeats(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"banana"}
+	b.HandleKey("f")
+	b.HandleKey("a")
+	if b.Col != 1 {
+		t.Fatalf("fa col = %d", b.Col)
+	}
+	b.HandleKey(";")
+	if b.Col != 3 {
+		t.Fatalf("; col = %d", b.Col)
+	}
+	b.HandleKey(",")
+	if b.Col != 1 {
+		t.Fatalf(", col = %d", b.Col)
+	}
+}
+
+func TestOperatorTextObjects(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"alpha beta gamma"}
+	b.Col = 7
+	b.HandleKey("d")
+	b.HandleKey("a")
+	b.HandleKey("w")
+	if got := b.Value(); got != "alpha gamma" {
+		t.Fatalf("daw = %q", got)
+	}
+	b.Lines = []string{`call("value")`}
+	b.Row, b.Col = 0, 6
+	b.HandleKey("c")
+	b.HandleKey("i")
+	b.HandleKey(`"`)
+	if got := b.Value(); got != `call("")` {
+		t.Fatalf("ci quote = %q", got)
+	}
+	if b.Mode != Insert {
+		t.Fatalf("mode = %v, want Insert", b.Mode)
+	}
+}
+
+func TestNormalCountsMoveAndOperate(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{
+		"alpha beta gamma delta",
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+		"eight",
+		"nine",
+		"ten",
+	}
+	b.HandleKey("3")
+	b.HandleKey("w")
+	if b.Col != len("alpha beta gamma ") {
+		t.Fatalf("3w col = %d", b.Col)
+	}
+	b.Row, b.Col = 0, 0
+	b.HandleKey("1")
+	b.HandleKey("0")
+	b.HandleKey("j")
+	if b.Row != 10 {
+		t.Fatalf("10j row = %d", b.Row)
+	}
+	b.Row, b.Col = 0, 6
+	b.HandleKey("2")
+	b.HandleKey("d")
+	b.HandleKey("a")
+	b.HandleKey("w")
+	if got := b.Lines[0]; got != "alpha delta" {
+		t.Fatalf("2daw line = %q", got)
+	}
+}
+
+func TestOperatorMotionCountsMultiply(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"alpha beta gamma delta epsilon zeta eta"}
+	b.HandleKey("2")
+	b.HandleKey("d")
+	b.HandleKey("3")
+	b.HandleKey("w")
+	if got := b.Lines[0]; got != "eta" {
+		t.Fatalf("2d3w line = %q", got)
+	}
+}

@@ -15,10 +15,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
 		return m.handleStatus(msg), nil
+	case editorStatusMsg:
+		m = m.handleEditorStatus(msg)
+		return m, nil
+	case definitionMsg:
+		return m.handleDefinition(msg)
+	case referencesMsg:
+		return m.handleReferences(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resizePreview()
+		m.resizeHelp()
 		return m, nil
 	case tea.KeyMsg:
 		if m.mode != ModeNormal && m.mode != ModeFilter && m.mode != ModeConfirmDelete && m.mode != ModeHelp {
@@ -31,10 +39,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateDeleteConfirm(msg)
 		}
 		if m.mode == ModeHelp {
-			if msg.String() == "esc" || msg.String() == "q" || msg.String() == "?" {
+			switch msg.String() {
+			case "esc", "q", "?":
 				m.mode = ModeNormal
+			case "j", "down":
+				m.helpViewport.LineDown(1)
+			case "k", "up":
+				m.helpViewport.LineUp(1)
+			case "ctrl+d", "pgdown":
+				m.helpViewport.HalfViewDown()
+			case "ctrl+u", "pgup":
+				m.helpViewport.HalfViewUp()
+			case "G":
+				m.helpViewport.GotoBottom()
+			case "g":
+				m.helpViewport.GotoTop()
 			}
 			return m, nil
+		}
+		if m.focus == FocusEditor && m.activeBuffer() != nil {
+			return m.updateEditor(msg)
 		}
 		return m.updateNormal(msg)
 	}
@@ -42,9 +66,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.windowPending {
+		m.windowPending = false
+		switch msg.String() {
+		case "h", "left":
+			m.treeHidden = false
+			m.focus = FocusTree
+			m.statusMessage = "Tree focused."
+		case "l", "right":
+			if m.activeBuffer() != nil {
+				m.focus = FocusEditor
+				m.statusMessage = "Editor focused."
+			}
+		case "w":
+			if m.activeBuffer() != nil {
+				m.focus = FocusEditor
+				m.statusMessage = "Editor focused."
+			}
+		case "o":
+			if m.activeBuffer() != nil {
+				m.treeHidden = true
+				m.focus = FocusEditor
+				m.statusMessage = "Tree hidden. ctrl+w o restores it."
+			}
+		default:
+			m.statusMessage = "Unknown window command."
+		}
+		return m, nil
+	}
 	switch msg.String() {
 	case "ctrl+c", "q":
-		return m, tea.Quit
+		return m.guardedQuit()
+	case "ctrl+w":
+		if m.activeBuffer() != nil {
+			m.windowPending = true
+			m.statusMessage = "Window command: h tree, l editor, w toggle, o only."
+		}
 	case "up", "k":
 		if m.selectedIndex > 0 {
 			m.selectedIndex--
@@ -102,10 +159,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e":
 		return m, m.openEditorCmd()
 	case "c":
-		if entry, ok := m.selected(); ok {
-			m.lastCommandHint = "Path: " + entry.Path
-			m.statusMessage = "Selected path copied into Navia's hint area."
-		}
+		return m, m.openSelectedInEditor()
 	case "?":
 		m.mode = ModeHelp
 	}
@@ -113,6 +167,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) openSelected() {
+	row, rowOK := m.selectedRow()
 	entry, ok := m.selected()
 	if !ok {
 		return
@@ -122,6 +177,14 @@ func (m *Model) openSelected() {
 		path := entry.Path
 		m.setError(m.refresh())
 		m.selectPath(path)
+		return
+	}
+	if rowOK && row.Line > 0 {
+		_ = m.openEditorTab(entry.Path)
+		if buf := m.activeBuffer(); buf != nil {
+			buf.Row = row.Line - 1
+			buf.Col = 0
+		}
 		return
 	}
 	m.statusMessage = "Press `e` to open this file in your editor."
@@ -331,9 +394,19 @@ func (m Model) handleStatus(msg statusMsg) Model {
 	return m
 }
 
+func (m Model) handleEditorStatus(msg editorStatusMsg) Model {
+	m.statusMessage = string(msg)
+	m.reloadActiveIfChanged()
+	m.setError(m.refresh())
+	return m
+}
+
 func (m *Model) resizePreview() {
 	left, right := m.paneWidths()
 	_ = left
+	if m.treeHidden && m.activeBuffer() != nil {
+		right = m.width
+	}
 	height := m.height - m.topHeight() - 2
 	if height < 4 {
 		height = 4
@@ -345,6 +418,17 @@ func (m *Model) resizePreview() {
 	m.previewViewport.Height = height - 4
 	if m.previewViewport.Height < 4 {
 		m.previewViewport.Height = 4
+	}
+}
+
+func (m *Model) resizeHelp() {
+	m.helpViewport.Width = min(84, m.width-10)
+	if m.helpViewport.Width < 30 {
+		m.helpViewport.Width = 30
+	}
+	m.helpViewport.Height = m.height - 8
+	if m.helpViewport.Height < 8 {
+		m.helpViewport.Height = 8
 	}
 }
 

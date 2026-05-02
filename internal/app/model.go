@@ -10,8 +10,10 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heidaraliy/navia/internal/config"
+	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
 	"github.com/heidaraliy/navia/internal/git"
+	"github.com/heidaraliy/navia/internal/syntax"
 	"github.com/heidaraliy/navia/internal/ui"
 )
 
@@ -33,6 +35,13 @@ type SearchMode int
 const (
 	SearchFiles SearchMode = iota
 	SearchText
+)
+
+type FocusPane int
+
+const (
+	FocusTree FocusPane = iota
+	FocusEditor
 )
 
 type ClipboardOperation int
@@ -63,6 +72,12 @@ type ResultRow struct {
 	Snippet string
 }
 
+type editorJump struct {
+	Path string
+	Row  int
+	Col  int
+}
+
 type Model struct {
 	cwd                 string
 	entries             []navfs.FileEntry
@@ -78,6 +93,14 @@ type Model struct {
 	clipboard           ClipboardState
 	preview             navfs.Preview
 	previewViewport     viewport.Model
+	helpViewport        viewport.Model
+	editorTabs          []*editor.Buffer
+	activeTab           int
+	jumpBack            []editorJump
+	jumpForward         []editorJump
+	treeHidden          bool
+	focus               FocusPane
+	windowPending       bool
 	input               textinput.Model
 	lastCommandHint     string
 	statusMessage       string
@@ -86,6 +109,7 @@ type Model struct {
 	width               int
 	height              int
 	styles              ui.Styles
+	syntax              syntax.Renderer
 	pendingDelete       navfs.FileEntry
 	expandedDirs        map[string]bool
 }
@@ -102,8 +126,10 @@ func New(start string, cfg config.Config) (Model, error) {
 		cwd:             cwd,
 		cfg:             cfg,
 		styles:          ui.NewStyles(),
+		syntax:          syntax.New(cfg.Theme),
 		input:           input,
 		previewViewport: viewport.New(40, 10),
+		helpViewport:    viewport.New(80, 20),
 		expandedDirs:    map[string]bool{cwd: true},
 	}
 	m.cfg.ShowHidden = true
