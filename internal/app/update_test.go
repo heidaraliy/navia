@@ -49,6 +49,33 @@ func TestPageKeysMoveTreeSelectionInChunks(t *testing.T) {
 	}
 }
 
+func TestEOpensSelectedFileInNaviaEditor(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "alpha.txt")
+	writeAppFile(t, file, "alpha\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.selectPath(file)
+
+	updated, cmd := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	got := updated.(Model)
+	if cmd != nil {
+		t.Fatalf("e edit cmd = %v, want nil", cmd)
+	}
+	if got.activeBuffer() == nil || got.activeBuffer().Path != file {
+		t.Fatalf("e edit active buffer = %#v, want %q", got.activeBuffer(), file)
+	}
+	if got.focus != FocusEditor {
+		t.Fatalf("e edit focus = %v, want editor", got.focus)
+	}
+	if got.lastCommandHint != "" {
+		t.Fatalf("e edit should not launch external editor hint, got %q", got.lastCommandHint)
+	}
+}
+
 func TestHelpMenuPagesWithCtrlDAndCtrlU(t *testing.T) {
 	m, err := New(t.TempDir(), config.Default())
 	if err != nil {
