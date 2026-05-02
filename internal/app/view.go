@@ -586,7 +586,7 @@ func (m Model) renderFooter() string {
 	status := m.statusMessage
 	if status == "" {
 		if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-			status = "Esc tree  s stage  u unstage  R restore  D rm  c commit  p push  r refresh"
+			status = "Esc tree  s stage  u unstage  R restore  D rm  c commit  p push  r refresh  auto"
 		} else if m.activeBuffer() != nil && m.focus == FocusEditor {
 			status = ":w save  :q close  :bn/:bp tabs  :bl list  ctrl+o/i jumps  gd/gr"
 		} else {
@@ -660,7 +660,8 @@ func helpContent() string {
 			{"s / u", "stage / unstage selected file"},
 			{"R / D", "restore / remove selected file"},
 			{"c / p", "commit / push current branch"},
-			{"r / esc", "refresh / return to tree"},
+			{"r / esc", "manual refresh / return to tree"},
+			{"auto", "refreshes while diff mode is open"},
 		}),
 		helpSection("File Operations", [][2]string{
 			{"r", "rename"},
