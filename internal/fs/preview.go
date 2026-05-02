@@ -34,25 +34,49 @@ type Preview struct {
 	Truncated bool
 }
 
+const MaxDirectoryPreviewEntries = 1000
+
 func BuildPreview(path string, maxBytes int64) Preview {
+	return BuildPreviewWithOptions(path, maxBytes, ScanOptions{ShowHidden: true})
+}
+
+func BuildPreviewWithOptions(path string, maxBytes int64, opts ScanOptions) Preview {
 	info, err := os.Stat(path)
 	if err != nil {
 		return Preview{Kind: PreviewError, Title: filepath.Base(path), Path: path, Content: err.Error()}
 	}
 	if info.IsDir() {
-		items, err := os.ReadDir(path)
+		dir, err := os.Open(path)
 		if err != nil {
 			return Preview{Kind: PreviewError, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: err.Error()}
 		}
+		defer dir.Close()
+		items, err := dir.ReadDir(MaxDirectoryPreviewEntries + 1)
+		if err != nil && err != io.EOF {
+			return Preview{Kind: PreviewError, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: err.Error()}
+		}
 		dirs, files := 0, 0
+		visible := 0
 		for _, item := range items {
+			if ShouldSkipName(item.Name(), opts) {
+				continue
+			}
+			visible++
+			if visible > MaxDirectoryPreviewEntries {
+				break
+			}
 			if item.IsDir() {
 				dirs++
 			} else {
 				files++
 			}
 		}
-		return Preview{Kind: PreviewDir, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: fmt.Sprintf("Directory\n\n%d folders\n%d files", dirs, files)}
+		truncated := visible > MaxDirectoryPreviewEntries
+		content := fmt.Sprintf("Directory\n\n%d folders\n%d files", dirs, files)
+		if truncated {
+			content += fmt.Sprintf("\n\n[preview limited to first %d entries]", MaxDirectoryPreviewEntries)
+		}
+		return Preview{Kind: PreviewDir, Title: info.Name(), Path: path, Size: info.Size(), ModTime: info.ModTime(), Content: content, Truncated: truncated}
 	}
 	if isImageExt(filepath.Ext(path)) {
 		if preview, ok := imagePreview(path, info.Size(), info.ModTime()); ok {

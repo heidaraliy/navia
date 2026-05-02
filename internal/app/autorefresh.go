@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	navfs "github.com/heidaraliy/navia/internal/fs"
 	"github.com/heidaraliy/navia/internal/git"
 )
 
@@ -16,38 +17,75 @@ const autoRefreshInterval = 900 * time.Millisecond
 
 type autoRefreshMsg struct{}
 
+type treeSignatureMsg struct {
+	cwd       string
+	signature string
+}
+
+type diffRefreshMsg struct {
+	root          string
+	changes       []git.Change
+	summary       git.Summary
+	selectedIndex int
+	content       string
+	signature     string
+	err           error
+}
+
 func autoRefreshCmd() tea.Cmd {
 	return tea.Tick(autoRefreshInterval, func(time.Time) tea.Msg {
 		return autoRefreshMsg{}
 	})
 }
 
-func (m *Model) handleAutoRefresh() {
+func (m Model) handleAutoRefresh() tea.Cmd {
 	switch m.mode {
 	case ModeDiff:
-		m.autoRefreshDiff()
+		return m.autoRefreshDiffCmd()
 	case ModeNormal:
-		m.autoRefreshTree()
+		if m.focus == FocusEditor && m.activeBuffer() != nil {
+			return nil
+		}
+		return m.autoRefreshTreeCmd()
+	}
+	return nil
+}
+
+func (m Model) autoRefreshTreeCmd() tea.Cmd {
+	if m.filter != "" {
+		return nil
+	}
+	return func() tea.Msg {
+		start := perfNow()
+		next := m.currentTreeSignature()
+		perfLogDuration("autorefresh.tree.signature", start, "cwd", m.cwd)
+		if next == "" || next == m.treeRefreshSignature {
+			return nil
+		}
+		return treeSignatureMsg{cwd: m.cwd, signature: next}
 	}
 }
 
-func (m *Model) autoRefreshTree() {
-	next := m.currentTreeSignature()
-	if next == "" || next == m.treeRefreshSignature {
-		return
+func (m Model) handleTreeSignature(msg treeSignatureMsg) (tea.Model, tea.Cmd) {
+	if msg.signature == "" || msg.signature == m.treeRefreshSignature {
+		return m, nil
+	}
+	if msg.cwd != m.cwd || m.mode != ModeNormal || m.filter != "" || (m.focus == FocusEditor && m.activeBuffer() != nil) {
+		return m, nil
 	}
 	selectedPath := ""
 	if entry, ok := m.selected(); ok {
 		selectedPath = entry.Path
 	}
-	if err := m.refresh(); err != nil {
+	if err := m.refreshTreeData(); err != nil {
 		m.setError(err)
-		return
+		return m, nil
 	}
 	if selectedPath != "" {
 		m.selectPath(selectedPath)
-		m.refreshPreview()
+		return m, m.queuePreview()
 	}
+	return m, nil
 }
 
 func (m *Model) currentTreeSignature() string {
@@ -82,6 +120,9 @@ func (m *Model) currentTreeSignature() string {
 			continue
 		}
 		for _, child := range children {
+			if navfs.ShouldSkipName(child.Name(), m.scanOptions()) {
+				continue
+			}
 			info, err := child.Info()
 			if err != nil {
 				fmt.Fprintf(&b, "child %s err %v\n", filepath.Join(dir, child.Name()), err)
@@ -95,6 +136,47 @@ func (m *Model) currentTreeSignature() string {
 
 func writeTreeSignatureEntry(b *strings.Builder, path string, info os.FileInfo) {
 	fmt.Fprintf(b, "%s %t %d %d %o\n", path, info.IsDir(), info.Size(), info.ModTime().UnixNano(), info.Mode().Perm())
+}
+
+func (m Model) autoRefreshDiffCmd() tea.Cmd {
+	if m.gitRoot == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		start := perfNow()
+		changes, summary, err := git.Status(m.gitRoot)
+		if err != nil {
+			return diffRefreshMsg{root: m.gitRoot, err: err}
+		}
+		selectedPath := ""
+		if change, ok := m.selectedDiffChange(); ok {
+			selectedPath = change.Path
+		}
+		selectedIndex := selectDiffIndex(changes, selectedPath, m.diffSelectedIndex)
+		content := diffPreviewContent(m.gitRoot, changes, selectedIndex, int(m.cfg.PreviewMaxBytes))
+		next := diffRefreshSignature(changes, summary, selectedIndex, content)
+		perfLogDuration("autorefresh.diff", start, "root", m.gitRoot)
+		if next == m.diffRefreshSignature {
+			return nil
+		}
+		return diffRefreshMsg{root: m.gitRoot, changes: changes, summary: summary, selectedIndex: selectedIndex, content: content, signature: next}
+	}
+}
+
+func (m Model) handleDiffRefresh(msg diffRefreshMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.setError(msg.err)
+		return m, nil
+	}
+	if msg.root != m.gitRoot || m.mode != ModeDiff || msg.signature == "" || msg.signature == m.diffRefreshSignature {
+		return m, nil
+	}
+	m.diffChanges = msg.changes
+	m.diffSummary = msg.summary
+	m.diffSelectedIndex = msg.selectedIndex
+	m.diffRefreshSignature = msg.signature
+	m.diffViewport.SetContent(msg.content)
+	return m, nil
 }
 
 func (m *Model) autoRefreshDiff() {
