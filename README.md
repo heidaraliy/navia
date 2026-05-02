@@ -53,7 +53,7 @@ Common keys:
 - `r`: rename
 - `y`, `x`, `p`: copy, cut, and paste
 - `d`: safe delete
-- `e`: open the selected file in `$VISUAL`, `$EDITOR`, or `nvim`
+- `e`: edit the selected file in Navia
 - `?`: help
 - `q`: quit
 

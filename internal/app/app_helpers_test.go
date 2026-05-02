@@ -283,11 +283,6 @@ func TestNormalModeClipboardDeleteParentAndOpenCommands(t *testing.T) {
 		t.Fatalf("safe delete exists/status = %v/%q", exists(filepath.Join(root, "delete.txt")), got.statusMessage)
 	}
 
-	got.rows = nil
-	cmd := got.openEditorCmd()
-	if cmd != nil {
-		t.Fatalf("openEditorCmd no selection cmd = %v, want nil", cmd)
-	}
 }
 
 func TestUpdateDispatchAndHelpKeys(t *testing.T) {
