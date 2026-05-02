@@ -250,6 +250,33 @@ func TestNormalCountsMoveAndOperate(t *testing.T) {
 	}
 }
 
+func TestNormalCommandLineShowsPendingOperatorSequence(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"alpha beta"}
+	b.HandleKey("c")
+	if got := b.NormalCommandLine(); got != "c" {
+		t.Fatalf("pending c = %q", got)
+	}
+	b.HandleKey("a")
+	if got := b.NormalCommandLine(); got != "ca" {
+		t.Fatalf("pending ca = %q", got)
+	}
+}
+
+func TestNormalCommandLineShowsOperatorAndMotionCounts(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"alpha beta gamma delta"}
+	b.HandleKey("2")
+	b.HandleKey("d")
+	if got := b.NormalCommandLine(); got != "2d" {
+		t.Fatalf("pending 2d = %q", got)
+	}
+	b.HandleKey("3")
+	if got := b.NormalCommandLine(); got != "2d3" {
+		t.Fatalf("pending 2d3 = %q", got)
+	}
+}
+
 func TestOperatorMotionCountsMultiply(t *testing.T) {
 	b := NewScratch("x.txt")
 	b.Lines = []string{"alpha beta gamma delta epsilon zeta eta"}
