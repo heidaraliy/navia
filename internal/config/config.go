@@ -19,7 +19,10 @@ type Config struct {
 	EnableLSP       bool
 	GoplsCommand    string
 	Theme           string
+	IgnoreNames     []string
 }
+
+const MaxPreviewBytes int64 = 4 * 1024 * 1024
 
 func SaveTheme(theme string) error {
 	path := Path()
@@ -67,6 +70,7 @@ func Default() Config {
 		EnableLSP:       true,
 		GoplsCommand:    "gopls",
 		Theme:           "navia",
+		IgnoreNames:     []string{".git", "node_modules", ".next", "dist", "build", "target", ".cache"},
 	}
 }
 
@@ -120,6 +124,9 @@ func Load() (Config, string) {
 			cfg.SortDirsFirst = parseBool(value, cfg.SortDirsFirst)
 		case "preview_max_bytes":
 			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
+				if n > MaxPreviewBytes {
+					n = MaxPreviewBytes
+				}
 				cfg.PreviewMaxBytes = n
 			}
 		case "editor_max_bytes":
@@ -136,12 +143,26 @@ func Load() (Config, string) {
 			if value != "" {
 				cfg.Theme = value
 			}
+		case "ignore_names":
+			cfg.IgnoreNames = parseCSV(value)
 		}
 	}
 	if scanner.Err() != nil {
 		return cfg, "Could not parse config completely; using parsed defaults."
 	}
 	return cfg, ""
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func parseBool(value string, fallback bool) bool {

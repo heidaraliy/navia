@@ -95,6 +95,7 @@ type Buffer struct {
 	lastFind  findState
 	undo      []snapshot
 	redo      []snapshot
+	insertTxn bool
 }
 
 type Range struct {
@@ -441,11 +442,12 @@ func (b *Buffer) handleInsert(key string) Action {
 	switch key {
 	case "esc", "ctrl+[":
 		b.Mode = Normal
+		b.insertTxn = false
 		if b.Col > 0 {
 			b.Col--
 		}
 	case "enter":
-		b.pushUndo()
+		b.beginInsertUndo()
 		line := b.Lines[b.Row]
 		left, right := line[:b.Col], line[b.Col:]
 		b.Lines[b.Row] = left
@@ -739,7 +741,7 @@ func (b *Buffer) startVisual(mode Mode) {
 }
 
 func (b *Buffer) insertText(s string) {
-	b.pushUndo()
+	b.beginInsertUndo()
 	line := b.Lines[b.Row]
 	b.Lines[b.Row] = line[:b.Col] + s + line[b.Col:]
 	b.Col += len([]rune(s))
@@ -750,7 +752,7 @@ func (b *Buffer) backspace() {
 	if b.Row == 0 && b.Col == 0 {
 		return
 	}
-	b.pushUndo()
+	b.beginInsertUndo()
 	if b.Col > 0 {
 		line := b.Lines[b.Row]
 		b.Lines[b.Row] = line[:b.Col-1] + line[b.Col:]
@@ -771,13 +773,21 @@ func (b *Buffer) deleteRune() {
 		if b.Row >= len(b.Lines)-1 {
 			return
 		}
-		b.pushUndo()
+		if b.Mode == Insert {
+			b.beginInsertUndo()
+		} else {
+			b.pushUndo()
+		}
 		b.Lines[b.Row] += b.Lines[b.Row+1]
 		b.Lines = append(b.Lines[:b.Row+1], b.Lines[b.Row+2:]...)
 		b.Dirty = true
 		return
 	}
-	b.pushUndo()
+	if b.Mode == Insert {
+		b.beginInsertUndo()
+	} else {
+		b.pushUndo()
+	}
 	b.Register = line[b.Col : b.Col+1]
 	b.Lines[b.Row] = line[:b.Col] + line[b.Col+1:]
 	b.Dirty = true
@@ -1239,6 +1249,14 @@ func (b *Buffer) pushUndo() {
 		b.undo = b.undo[1:]
 	}
 	b.redo = nil
+}
+
+func (b *Buffer) beginInsertUndo() {
+	if b.insertTxn {
+		return
+	}
+	b.pushUndo()
+	b.insertTxn = true
 }
 
 func (b *Buffer) undoLast() {

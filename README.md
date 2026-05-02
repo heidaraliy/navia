@@ -56,6 +56,7 @@ editor = "nvim"
 safe_delete = true
 sort_dirs_first = true
 preview_max_bytes = 262144
+ignore_names = ".git,node_modules,.next,dist,build,target,.cache"
 ```
 
 ## Development

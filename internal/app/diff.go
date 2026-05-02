@@ -10,6 +10,13 @@ import (
 	"github.com/heidaraliy/navia/internal/git"
 )
 
+type diffPreviewLoadedMsg struct {
+	id            int
+	selectedIndex int
+	content       string
+	signature     string
+}
+
 func (m *Model) enterDiffMode() {
 	if m.gitRoot == "" {
 		m.statusMessage = "Diff mode requires a git repository."
@@ -67,6 +74,38 @@ func (m *Model) refreshDiffPreview() {
 	m.diffViewport.GotoTop()
 }
 
+func (m *Model) queueDiffPreview() tea.Cmd {
+	m.diffPreviewRequestID++
+	id := m.diffPreviewRequestID
+	selected := m.diffSelectedIndex
+	m.diffViewport.SetContent("Loading diff...")
+	m.diffViewport.GotoTop()
+	return m.diffPreviewCmd(id, selected)
+}
+
+func (m Model) diffPreviewCmd(id int, selected int) tea.Cmd {
+	root := m.gitRoot
+	changes := append([]git.Change(nil), m.diffChanges...)
+	summary := m.diffSummary
+	maxBytes := int(m.cfg.PreviewMaxBytes)
+	return func() tea.Msg {
+		start := perfNow()
+		content := diffPreviewContent(root, changes, selected, maxBytes)
+		signature := diffRefreshSignature(changes, summary, selected, content)
+		perfLogDuration("diff.preview", start, "root", root)
+		return diffPreviewLoadedMsg{id: id, selectedIndex: selected, content: content, signature: signature}
+	}
+}
+
+func (m *Model) applyDiffPreviewLoaded(msg diffPreviewLoadedMsg) {
+	if m.mode != ModeDiff || msg.id != m.diffPreviewRequestID || msg.selectedIndex != m.diffSelectedIndex {
+		return
+	}
+	m.diffViewport.SetContent(msg.content)
+	m.diffRefreshSignature = msg.signature
+	m.diffViewport.GotoTop()
+}
+
 func diffPreviewContent(gitRoot string, changes []git.Change, selectedIndex int, maxBytes int) string {
 	if len(changes) == 0 || selectedIndex < 0 || selectedIndex >= len(changes) {
 		return "No modified or untracked files."
@@ -91,12 +130,12 @@ func (m Model) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if m.diffSelectedIndex > 0 {
 			m.diffSelectedIndex--
-			m.refreshDiffPreview()
+			return m, m.queueDiffPreview()
 		}
 	case "down", "j":
 		if m.diffSelectedIndex < len(m.diffChanges)-1 {
 			m.diffSelectedIndex++
-			m.refreshDiffPreview()
+			return m, m.queueDiffPreview()
 		}
 	case "ctrl+u", "pgup":
 		m.diffViewport.HalfViewUp()

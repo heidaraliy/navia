@@ -87,6 +87,13 @@ type editorJump struct {
 	Col  int
 }
 
+type previewLoadedMsg struct {
+	id      int
+	path    string
+	preview navfs.Preview
+	content string
+}
+
 type Model struct {
 	cwd                  string
 	entries              []navfs.FileEntry
@@ -97,17 +104,21 @@ type Model struct {
 	selectedIndex        int
 	filter               string
 	executedSearchQuery  string
+	searchRequestID      int
+	searchRunning        bool
 	searchMode           SearchMode
 	mode                 Mode
 	helpReturnMode       Mode
 	clipboard            ClipboardState
 	preview              navfs.Preview
 	previewViewport      viewport.Model
+	previewRequestID     int
 	diffViewport         viewport.Model
 	diffChanges          []git.Change
 	diffSummary          git.Summary
 	diffSelectedIndex    int
 	diffRefreshSignature string
+	diffPreviewRequestID int
 	pendingDiffAction    git.Change
 	helpViewport         viewport.Model
 	editorTabs           []*editor.Buffer
@@ -156,7 +167,6 @@ func New(start string, cfg config.Config) (Model, error) {
 		helpViewport:    viewport.New(80, 20),
 		expandedDirs:    map[string]bool{cwd: true},
 	}
-	m.cfg.ShowHidden = true
 	m.gitRoot = git.FindRoot(cwd)
 	if err := m.refresh(); err != nil {
 		return Model{}, err
@@ -197,10 +207,15 @@ func (m *Model) StartSearch(search StartupSearch) {
 }
 
 func (m *Model) refresh() error {
-	entries, err := navfs.ScanDir(m.cwd, navfs.ScanOptions{
-		ShowHidden:    true,
-		SortDirsFirst: m.cfg.SortDirsFirst,
-	})
+	if err := m.refreshTreeData(); err != nil {
+		return err
+	}
+	m.refreshPreview()
+	return nil
+}
+
+func (m *Model) refreshTreeData() error {
+	entries, err := navfs.ScanDir(m.cwd, m.scanOptions())
 	if err != nil {
 		return err
 	}
@@ -208,7 +223,6 @@ func (m *Model) refresh() error {
 	m.treeRows = m.buildTreeRows()
 	m.applyFilter()
 	m.clampSelection()
-	m.refreshPreview()
 	m.gitRoot = git.FindRoot(m.cwd)
 	m.treeRefreshSignature = m.currentTreeSignature()
 	return nil
@@ -257,7 +271,7 @@ func (m *Model) applyFileSearch() {
 }
 
 func (m *Model) applyTextSearch() {
-	opts := navfs.ScanOptions{ShowHidden: true, SortDirsFirst: m.cfg.SortDirsFirst}
+	opts := m.scanOptions()
 	matches, err := navfs.SearchText(m.cwd, m.filter, m.cfg.PreviewMaxBytes, opts)
 	if err != nil {
 		m.statusMessage = err.Error()
@@ -275,7 +289,7 @@ func (m *Model) ensureRecursiveRows() {
 	if m.recursiveRoot == m.cwd && m.recursiveRows != nil {
 		return
 	}
-	opts := navfs.ScanOptions{ShowHidden: true, SortDirsFirst: m.cfg.SortDirsFirst}
+	opts := m.scanOptions()
 	matches, err := navfs.SearchFiles(m.cwd, "", opts)
 	if err != nil {
 		m.statusMessage = err.Error()
@@ -331,11 +345,57 @@ func (m *Model) refreshPreview() {
 		m.previewViewport.SetContent(m.preview.Content)
 		return
 	}
-	m.preview = navfs.BuildPreview(entry.Path, m.cfg.PreviewMaxBytes)
+	m.preview = navfs.BuildPreviewWithOptions(entry.Path, m.cfg.PreviewMaxBytes, m.scanOptions())
 	if row, ok := m.selectedRow(); ok && row.Line > 0 {
 		m.preview.Content = fmt.Sprintf("line %d: %s\n\n%s", row.Line, row.Snippet, m.preview.Content)
 	}
 	m.previewViewport.SetContent(m.renderPreviewContent())
+	m.previewViewport.GotoTop()
+}
+
+func (m *Model) queuePreview() tea.Cmd {
+	entry, ok := m.selected()
+	if !ok {
+		m.previewRequestID++
+		m.preview = navfs.Preview{Title: "empty", Content: "No entries."}
+		m.previewViewport.SetContent(m.preview.Content)
+		return nil
+	}
+	row, _ := m.selectedRow()
+	m.previewRequestID++
+	id := m.previewRequestID
+	path := entry.Path
+	title := entry.Name
+	m.preview = navfs.Preview{Title: title, Path: path, Content: "Loading preview..."}
+	m.previewViewport.SetContent(m.preview.Content)
+	m.previewViewport.GotoTop()
+	return m.previewCmd(id, path, row)
+}
+
+func (m Model) previewCmd(id int, path string, row ResultRow) tea.Cmd {
+	maxBytes := m.cfg.PreviewMaxBytes
+	opts := m.scanOptions()
+	return func() tea.Msg {
+		start := perfNow()
+		preview := navfs.BuildPreviewWithOptions(path, maxBytes, opts)
+		if row.Line > 0 {
+			preview.Content = fmt.Sprintf("line %d: %s\n\n%s", row.Line, row.Snippet, preview.Content)
+		}
+		content := m.renderPreviewContentFor(preview, path)
+		perfLogDuration("preview.build", start, "path", path)
+		return previewLoadedMsg{id: id, path: path, preview: preview, content: content}
+	}
+}
+
+func (m *Model) applyPreviewLoaded(msg previewLoadedMsg) {
+	if msg.id != m.previewRequestID {
+		return
+	}
+	if entry, ok := m.selected(); !ok || entry.Path != msg.path {
+		return
+	}
+	m.preview = msg.preview
+	m.previewViewport.SetContent(msg.content)
 	m.previewViewport.GotoTop()
 }
 
@@ -357,10 +417,7 @@ func (m *Model) buildTreeRows() []TreeRow {
 }
 
 func (m *Model) appendChildren(rows []TreeRow, dir string, depth int) []TreeRow {
-	children, err := navfs.ScanDir(dir, navfs.ScanOptions{
-		ShowHidden:    true,
-		SortDirsFirst: m.cfg.SortDirsFirst,
-	})
+	children, err := navfs.ScanDir(dir, m.scanOptions())
 	if err != nil {
 		return rows
 	}
@@ -372,6 +429,28 @@ func (m *Model) appendChildren(rows []TreeRow, dir string, depth int) []TreeRow 
 		}
 	}
 	return rows
+}
+
+func (m Model) scanOptions() navfs.ScanOptions {
+	return navfs.ScanOptions{
+		ShowHidden:    m.cfg.ShowHidden,
+		SortDirsFirst: m.cfg.SortDirsFirst,
+		IgnoreNames:   m.ignoreNameSet(),
+	}
+}
+
+func (m Model) ignoreNameSet() map[string]bool {
+	if len(m.cfg.IgnoreNames) == 0 {
+		return nil
+	}
+	ignored := make(map[string]bool, len(m.cfg.IgnoreNames))
+	for _, name := range m.cfg.IgnoreNames {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			ignored[name] = true
+		}
+	}
+	return ignored
 }
 
 func (m Model) treeRowsToResultRows(rows []TreeRow) []ResultRow {
