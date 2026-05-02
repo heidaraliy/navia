@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -185,9 +184,7 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.statusMessage = "Delete file safely? Press y to move it to .navia-trash, Esc to cancel."
 			}
 		}
-	case "e":
-		return m, m.openEditorCmd()
-	case "c":
+	case "e", "c":
 		return m, m.openSelectedInEditor()
 	case "?":
 		m.enterHelpMode(ModeNormal)
@@ -250,7 +247,7 @@ func (m *Model) openSelected() {
 		_ = m.openEditorTab(entry.Path)
 		return
 	}
-	m.statusMessage = "Press `e` to open this file in your editor."
+	m.statusMessage = "Press `e` to edit this file."
 }
 
 func (m *Model) collapseOrParent() tea.Cmd {
@@ -469,22 +466,6 @@ func (m *Model) pasteClipboard() {
 	}
 	m.statusMessage = "Pasted `" + filepath.Base(dst) + "`."
 	m.setError(m.refresh())
-}
-
-func (m Model) openEditorCmd() tea.Cmd {
-	entry, ok := m.selected()
-	if !ok || entry.IsDir {
-		m.statusMessage = "Select a file to open."
-		return nil
-	}
-	editor := m.cfg.Editor
-	m.lastCommandHint = shellteach.OpenCommand(entry.Path, editor)
-	return tea.ExecProcess(exec.Command(editor, entry.Path), func(err error) tea.Msg {
-		if err != nil {
-			return statusMsg("Could not open file: " + err.Error())
-		}
-		return statusMsg("Returned from editor.")
-	})
 }
 
 type statusMsg string

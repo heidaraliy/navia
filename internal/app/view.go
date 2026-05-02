@@ -601,7 +601,7 @@ func (m Model) renderFooter() string {
 		} else if m.activeBuffer() != nil && m.focus == FocusEditor {
 			status = ":w save  :q close  :bn/:bp tabs  :bl list  ctrl+o/i jumps  gd/gr"
 		} else {
-			status = "q quit  ? help  D diff  enter/l expand  h collapse  / search  c edit  e external"
+			status = "q quit  ? help  D diff  enter/l expand  h collapse  / search  e edit"
 		}
 	}
 	cmd := m.lastCommandHint
@@ -661,8 +661,7 @@ func helpContent() string {
 			{"backspace/h", "collapse or jump to parent"},
 			{"/", "recursive search"},
 			{"g", "go to path"},
-			{"c", "open selected file in Navia editor"},
-			{"e", "open selected file externally"},
+			{"e / c", "open selected file in Navia editor"},
 			{"D", "open diff mode"},
 		}),
 		helpSection("Diff", [][2]string{
