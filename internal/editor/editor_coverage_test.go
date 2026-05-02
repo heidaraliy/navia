@@ -537,10 +537,16 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 		if path != "x.txt" {
 			t.Fatalf("highlight path = %q", path)
 		}
+		if strings.Contains(line, "█") {
+			t.Fatalf("highlight received cursor-mutated line = %q", line)
+		}
 		return "\x1b[31m" + line + "\x1b[0m"
 	})
 	if len(highlighted) != 4 || !strings.Contains(highlighted[0], "\x1b[31m") {
 		t.Fatalf("highlighted visible = %#v", highlighted)
+	}
+	if !strings.Contains(highlighted[1], "\x1b[31mt█o\x1b[0m") {
+		t.Fatalf("highlighted cursor lost style = %#v", highlighted)
 	}
 	if got := b.Visible(0, 2); len(got) != 2 || got[0] != "" {
 		t.Fatalf("zero-width visible = %#v", got)
@@ -563,6 +569,9 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 	}
 	if got := renderLine("ab", 2, true); got != "ab█" {
 		t.Fatalf("renderLine insert end = %q", got)
+	}
+	if got := renderHighlightedLine("\x1b[31mword\x1b[0m", 1, false); got != "\x1b[31mw█rd\x1b[0m" {
+		t.Fatalf("renderHighlightedLine cursor style = %q", got)
 	}
 	if got := tabWidth(5); got != 3 {
 		t.Fatalf("tabWidth = %d", got)

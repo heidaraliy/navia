@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -672,13 +673,10 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 	for i := start; i < len(b.Lines) && len(out) < height; i++ {
 		prefix := fmt.Sprintf("%*d ", gutterW, i+1)
 		lineText, col := visibleLineWindow(b.Lines[i], -1, width, height)
-		line := renderLine(lineText, col, false)
+		line := renderVisibleLine(b.Path, lineText, col, false, highlight)
 		if i == b.Row {
 			lineText, col = visibleLineWindow(b.Lines[i], b.Col, width, height)
-			line = renderLine(lineText, col, b.Mode == Insert)
-		}
-		if highlight != nil {
-			line = highlight(b.Path, line)
+			line = renderVisibleLine(b.Path, lineText, col, b.Mode == Insert, highlight)
 		}
 		wrapped := wrapDisplayLimit(prefix+line, strings.Repeat(" ", gutterW+1), width, height-len(out))
 		for _, visual := range wrapped {
@@ -692,6 +690,13 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 		out = append(out, "   ~ ")
 	}
 	return out
+}
+
+func renderVisibleLine(path, line string, col int, insert bool, highlight func(path, line string) string) string {
+	if highlight == nil {
+		return renderLine(line, col, insert)
+	}
+	return renderHighlightedLine(highlight(path, line), col, insert)
 }
 
 func visibleLineWindow(line string, col, width, height int) (string, int) {
@@ -1480,6 +1485,68 @@ func renderLine(s string, col int, insert bool) string {
 		displayCol++
 	}
 	if col >= len(s) || (insert && col == len(s)) {
+		cursorDrawn = true
+		out.WriteRune('█')
+	}
+	if col >= 0 && !cursorDrawn {
+		out.WriteRune('█')
+	}
+	return out.String()
+}
+
+func renderHighlightedLine(s string, col int, insert bool) string {
+	var out strings.Builder
+	displayCol := 0
+	sourceByte := 0
+	cursorDrawn := false
+	for i := 0; i < len(s); {
+		if strings.HasPrefix(s[i:], "\x1b[") {
+			end := i + 2
+			for end < len(s) && s[end] != 'm' {
+				end++
+			}
+			if end < len(s) {
+				end++
+			}
+			out.WriteString(s[i:end])
+			i = end
+			continue
+		}
+		r, size := rune(s[i]), 1
+		if r >= utf8.RuneSelf {
+			r, size = utf8.DecodeRuneInString(s[i:])
+		}
+		if sourceByte == col {
+			cursorDrawn = true
+			if r == '\t' {
+				spaces := tabWidth(displayCol)
+				out.WriteRune('█')
+				if spaces > 1 {
+					out.WriteString(strings.Repeat(" ", spaces-1))
+				}
+				displayCol += spaces
+			} else {
+				out.WriteRune('█')
+				displayCol++
+			}
+			sourceByte += size
+			i += size
+			continue
+		}
+		if r == '\t' {
+			spaces := tabWidth(displayCol)
+			out.WriteString(strings.Repeat(" ", spaces))
+			displayCol += spaces
+			sourceByte += size
+			i += size
+			continue
+		}
+		out.WriteRune(r)
+		displayCol++
+		sourceByte += size
+		i += size
+	}
+	if col >= sourceByte || (insert && col == sourceByte) {
 		cursorDrawn = true
 		out.WriteRune('█')
 	}
