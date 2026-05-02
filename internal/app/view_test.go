@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
 	"github.com/heidaraliy/navia/internal/ui"
@@ -115,6 +116,26 @@ func TestFooterHintsFollowMode(t *testing.T) {
 	hints = m.footerHints()
 	if len(hints) == 0 || hints[0] != (footerHint{":w", "save"}) {
 		t.Fatalf("editor footer hints = %#v", hints)
+	}
+}
+
+func TestFooterHintStylesKeepSingleBackground(t *testing.T) {
+	m := Model{styles: ui.NewStyles()}
+	bg := m.styles.Footer.GetBackground()
+	for _, style := range []struct {
+		name  string
+		value lipgloss.Style
+	}{
+		{"tab", m.styles.FooterTab},
+		{"key", m.styles.FooterKey},
+		{"separator", m.styles.FooterSeparator},
+	} {
+		if style.value.GetBackground() != bg {
+			t.Fatalf("%s background = %q, want footer background %q", style.name, style.value.GetBackground(), bg)
+		}
+	}
+	if m.footerKeyStyle(footerHint{"q", "quit"}).GetForeground() == m.footerKeyStyle(footerHint{"?", "help"}).GetForeground() {
+		t.Fatal("footer key styles should color-code action groups")
 	}
 }
 

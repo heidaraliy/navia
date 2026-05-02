@@ -47,8 +47,8 @@ func NewStyles() Styles {
 		Error:           lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
 		Modal:           lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Background(lipgloss.Color("235")),
 		Command:         lipgloss.NewStyle().Foreground(lipgloss.Color("151")),
-		FooterTab:       lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("236")),
-		FooterKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Bold(true),
+		FooterTab:       lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("238")),
+		FooterKey:       lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("238")).Bold(true),
 		FooterSeparator: lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Background(lipgloss.Color("238")),
 		Highlight:       lipgloss.NewStyle().Foreground(lipgloss.Color("229")),
 	}
