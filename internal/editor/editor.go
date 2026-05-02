@@ -616,6 +616,23 @@ func (b *Buffer) CommandLine() string {
 	return ""
 }
 
+func (b *Buffer) NormalCommandLine() string {
+	if b.Mode != Normal {
+		return ""
+	}
+	if b.pending == "" && b.count == "" {
+		return ""
+	}
+	if b.pending == "ctrl+w" {
+		return "ctrl+w"
+	}
+	prefix := ""
+	if b.opCount > 1 {
+		prefix = strconv.Itoa(b.opCount)
+	}
+	return prefix + b.pending + b.count
+}
+
 func (b *Buffer) CursorLine() int { return b.Row + 1 }
 func (b *Buffer) CursorCol() int  { return b.Col + 1 }
 func (b *Buffer) SearchQuery() string {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	termansi "github.com/charmbracelet/x/ansi"
 	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
 )
@@ -36,43 +37,108 @@ func (m Model) renderMain(leftW, rightW int) string {
 }
 
 func (m Model) renderTop() string {
-	label, meta := m.topModeLabel()
-	row1 := label
-	if meta != "" {
-		if m.mode == ModeFilter || m.filter != "" {
-			row1 += " " + m.styles.Highlight.Render(meta)
-		} else {
-			gap := max(1, m.width-lipgloss.Width(label)-lipgloss.Width(meta)-1)
-			row1 += strings.Repeat(" ", gap) + m.styles.Dim.Render(meta)
-		}
+	left := m.topLeft()
+	right := m.topRightMeta()
+	row1 := left
+	if right != "" {
+		gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-1)
+		row1 += strings.Repeat(" ", gap) + m.styles.Dim.Render(right)
 	}
 	row2 := m.renderTabs(m.width)
 	if row2 == "" {
 		row2 = m.styles.Dim.Render(m.topContext())
 	}
-	return m.styles.TopBar.Width(m.width).Height(m.topHeight()).Render(clip(row1, m.width) + "\n" + clip(row2, m.width))
+	return m.styles.TopBar.Width(m.width).Height(m.topHeight()).Render(clipStyled(row1, m.width) + "\n" + clipStyled(row2, m.width))
 }
 
-func (m Model) topModeLabel() (string, string) {
-	mode := "TREE"
-	fg := lipgloss.Color("230")
-	bg := lipgloss.Color("39")
+func (m Model) topLeft() string {
 	if m.mode == ModeFilter || m.filter != "" {
-		mode = "SEARCH"
-		fg = lipgloss.Color("229")
-		bg = lipgloss.Color("58")
-	} else if m.mode == ModeHelp {
-		mode = "HELP"
-		bg = lipgloss.Color("147")
-	} else if m.focus == FocusEditor && m.activeBuffer() != nil {
-		mode = "EDITOR"
-		bg = lipgloss.Color("39")
+		query := m.filter
+		queryStyle := m.styles.Highlight
+		if query == "" {
+			query = "enter query..."
+			queryStyle = m.styles.Dim
+		}
+		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
+			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
+			" " + queryStyle.Render(query)
 	}
+	if m.focus == FocusEditor {
+		if buf := m.activeBuffer(); buf != nil {
+			mode := editorModeLabel(buf)
+			line := m.topTag("EDITOR", lipgloss.Color("39"), lipgloss.Color("230")) +
+				m.topTag(mode, editorModeColor(mode), lipgloss.Color("230"))
+			if cmd := buf.CommandLine(); cmd != "" {
+				line += " " + m.commandCue(mode).Render(cmd)
+			} else if cmd := buf.NormalCommandLine(); cmd != "" {
+				line += " " + m.commandCue(mode).Render(cmd)
+			}
+			return line
+		}
+	}
+	mode := "TREE"
 	if m.treeHidden && m.activeBuffer() != nil {
 		mode += " ONLY"
 	}
-	label := lipgloss.NewStyle().Foreground(fg).Background(bg).Bold(true).Padding(0, 1).Render(mode)
-	return label, m.topContext()
+	if m.mode == ModeHelp {
+		mode = "HELP"
+		return m.topTag(mode, lipgloss.Color("147"), lipgloss.Color("230"))
+	}
+	return m.topTag(mode, lipgloss.Color("39"), lipgloss.Color("230"))
+}
+
+func (m Model) topTag(label string, bg, fg lipgloss.Color) string {
+	return lipgloss.NewStyle().Foreground(fg).Background(bg).Bold(true).Padding(0, 1).Render(label)
+}
+
+func (m Model) commandCue(mode string) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(commandCueColor(mode)).Underline(true)
+}
+
+func commandCueColor(mode string) lipgloss.Color {
+	switch mode {
+	case "EXEC":
+		return lipgloss.Color("174")
+	case "SEARCH":
+		return lipgloss.Color("186")
+	case "INSERT":
+		return lipgloss.Color("114")
+	case "VISUAL", "VISUAL-LINE":
+		return lipgloss.Color("183")
+	default:
+		return lipgloss.Color("110")
+	}
+}
+
+func editorModeColor(mode string) lipgloss.Color {
+	switch mode {
+	case "INSERT":
+		return lipgloss.Color("29")
+	case "VISUAL":
+		return lipgloss.Color("92")
+	case "VISUAL-LINE":
+		return lipgloss.Color("126")
+	case "EXEC":
+		return lipgloss.Color("130")
+	case "SEARCH":
+		return lipgloss.Color("58")
+	default:
+		return lipgloss.Color("24")
+	}
+}
+
+func searchModeColor(mode SearchMode) lipgloss.Color {
+	if mode == SearchText {
+		return lipgloss.Color("90")
+	}
+	return lipgloss.Color("24")
+}
+
+func (m Model) topRightMeta() string {
+	if buf := m.activeBuffer(); buf != nil && m.focus == FocusEditor {
+		return fmt.Sprintf("Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
+	}
+	return fmt.Sprintf("Rows:%d", len(m.rows))
 }
 
 func (m Model) topContext() string {
@@ -84,11 +150,7 @@ func (m Model) topContext() string {
 	}
 	context := project + "  " + path
 	if m.mode == ModeFilter || m.filter != "" {
-		query := m.filter
-		if query == "" {
-			query = "type query"
-		}
-		context = "type:" + m.searchModeLabel() + "  query:" + query
+		context = "tab toggles files/text  enter runs recursive search"
 	} else if buf := m.activeBuffer(); buf != nil {
 		context = tabLabel(buf) + "  " + statusPath(buf.Path)
 	}
@@ -277,15 +339,18 @@ func (m Model) renderPreview(width int) string {
 		title = filepath.Base(m.selectedPathForStatus())
 	}
 	header := m.styles.Highlight.Render(title)
-	content := m.previewViewport.View()
-	if m.preview.Kind == navfs.PreviewText {
-		content = m.highlightPreviewContent(content)
-	}
+	preview := m.previewViewport
+	preview.SetContent(m.renderPreviewContent())
+	content := preview.View()
 	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
 	return panel.Width(width - 2).Height(height).Render(body)
 }
 
-func (m Model) highlightPreviewContent(content string) string {
+func (m Model) renderPreviewContent() string {
+	content := m.preview.Content
+	if m.preview.Kind != navfs.PreviewText {
+		return content
+	}
 	entry, ok := m.selected()
 	if !ok {
 		return content
@@ -359,15 +424,6 @@ func (m Model) renderIdleBrand(width, height int) string {
 
 func (m Model) renderFooter() string {
 	status := m.statusMessage
-	right := ""
-	if buf := m.activeBuffer(); buf != nil {
-		right = fmt.Sprintf("%s  Lines:%d  %d:%d", buf.Mode.String(), len(buf.Lines), buf.CursorLine(), buf.CursorCol())
-		if cmd := buf.CommandLine(); cmd != "" {
-			status = cmd
-		}
-	} else {
-		right = fmt.Sprintf("Rows:%d", len(m.rows))
-	}
 	if status == "" {
 		if m.activeBuffer() != nil && m.focus == FocusEditor {
 			status = ":w save  :q close  :bn/:bp tabs  :bl list  ctrl+o/i jumps  gd/gr"
@@ -379,11 +435,7 @@ func (m Model) renderFooter() string {
 	if cmd != "" {
 		status += " | " + m.styles.Command.Render(cmd)
 	}
-	statusW := max(0, m.width-lipgloss.Width(right)-3)
-	status = clip(status, statusW)
-	gap := max(1, m.width-lipgloss.Width(status)-lipgloss.Width(right)-2)
-	line := status + strings.Repeat(" ", gap) + m.styles.Dim.Render(right)
-	return m.styles.Footer.Width(m.width).Render(line)
+	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
 }
 
 func (m Model) renderModal() string {
@@ -425,6 +477,7 @@ func helpContent() string {
 		helpSection("Tree", [][2]string{
 			{"up/k, down/j", "move selection"},
 			{"enter/l", "expand directory or open search result"},
+			{"L / shift+enter", "make selected directory the root"},
 			{"backspace/h", "collapse or jump to parent"},
 			{"/", "recursive search"},
 			{"g", "go to path"},
@@ -520,6 +573,13 @@ func clip(s string, width int) string {
 		return s
 	}
 	return string(runes[:width])
+}
+
+func clipStyled(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	return termansi.Truncate(s, width, "")
 }
 
 func center(s string, width int) string {
