@@ -560,6 +560,38 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 	if !strings.HasPrefix(window, "... ") || !strings.HasSuffix(window, " ...") || col <= 0 {
 		t.Fatalf("window prefix/suffix/col = %q/%d", window[:min(10, len(window))], col)
 	}
+	mixed := strings.Repeat("x", 3000) + "界" + strings.Repeat("y", 3000)
+	window, col = visibleLineWindow(mixed, 3001, 40, 2)
+	if !strings.Contains(window, "界") || col <= 0 {
+		t.Fatalf("unicode cursor window missing target = %q/%d", window, col)
+	}
+	if got := clampByteToRuneBoundary("a界b", 2); got != 1 {
+		t.Fatalf("clampByteToRuneBoundary = %d, want 1", got)
+	}
+	if got := clampByteToRuneBoundary("abc", -1); got != 0 {
+		t.Fatalf("negative clampByteToRuneBoundary = %d", got)
+	}
+	if got := clampByteToRuneBoundary("abc", 99); got != len("abc") {
+		t.Fatalf("large clampByteToRuneBoundary = %d", got)
+	}
+	if end, truncated := byteAfterRunes("", 0); end != 0 || truncated {
+		t.Fatalf("empty byteAfterRunes = %d/%v", end, truncated)
+	}
+	if end, truncated := byteAfterRunes("abc", 0); end != 0 || !truncated {
+		t.Fatalf("zero budget byteAfterRunes = %d/%v", end, truncated)
+	}
+	if end := byteAfterRunesFrom("abc", -3, 2); end != 2 {
+		t.Fatalf("negative start byteAfterRunesFrom = %d", end)
+	}
+	if end := byteAfterRunesFrom("abc", 5, 2); end != 5 {
+		t.Fatalf("large start byteAfterRunesFrom = %d", end)
+	}
+	if start := byteBeforeRunes("abc", -1, 2); start != 0 {
+		t.Fatalf("negative end byteBeforeRunes = %d", start)
+	}
+	if start := byteBeforeRunes("abc", 99, 1); start != len("ab") {
+		t.Fatalf("large end byteBeforeRunes = %d", start)
+	}
 	window, col = visibleLineWindow(long, -1, 40, 2)
 	if !strings.HasSuffix(window, " ...") || col != -1 {
 		t.Fatalf("non-cursor window suffix/col = %q/%d", window[len(window)-5:], col)
