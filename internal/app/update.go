@@ -214,6 +214,13 @@ func (m *Model) moveSelection(delta int) tea.Cmd {
 	return nil
 }
 
+func (m *Model) restoreTreePreviewFromActiveBuffer() tea.Cmd {
+	if buf := m.activeBuffer(); buf != nil {
+		m.selectPath(buf.Path)
+	}
+	return m.queuePreview()
+}
+
 func (m Model) pageStep() int {
 	height := m.height - m.topHeight() - 4
 	if height < 6 {
