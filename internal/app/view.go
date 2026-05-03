@@ -10,6 +10,7 @@ import (
 	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
 	"github.com/heidaraliy/navia/internal/git"
+	"github.com/heidaraliy/navia/internal/textsafe"
 )
 
 type footerHint struct {
@@ -74,7 +75,7 @@ func (m Model) topLeft() string {
 		}
 		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
 			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
-			" " + queryStyle.Render(query)
+			" " + queryStyle.Render(displayText(query))
 	}
 	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
@@ -85,9 +86,9 @@ func (m Model) topLeft() string {
 			line := m.topTag("EDITOR", lipgloss.Color("39"), lipgloss.Color("230")) +
 				m.topTag(mode, editorModeColor(mode), lipgloss.Color("230"))
 			if cmd := buf.CommandLine(); cmd != "" {
-				line += " " + m.commandCue(mode).Render(cmd)
+				line += " " + m.commandCue(mode).Render(displayText(cmd))
 			} else if cmd := buf.NormalCommandLine(); cmd != "" {
-				line += " " + m.commandCue(mode).Render(cmd)
+				line += " " + m.commandCue(mode).Render(displayText(cmd))
 			}
 			return line
 		}
@@ -170,13 +171,13 @@ func (m Model) topContext() string {
 		project = filepath.Base(m.gitRoot)
 		path = gitPathLabel(m.gitRoot, m.cwd)
 	}
-	context := project + "  " + path
+	context := displayText(project) + "  " + displayText(path)
 	if m.mode == ModeFilter || m.filter != "" {
 		context = "tab toggles files/text  enter runs recursive search"
 	} else if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		context = diffSummaryText(m.diffSummary)
 	} else if buf := m.activeBuffer(); buf != nil {
-		context = tabLabel(buf) + "  " + statusPath(buf.Path)
+		context = tabLabel(buf) + "  " + displayText(statusPath(buf.Path))
 	}
 	return context
 }
@@ -302,7 +303,7 @@ func (m Model) renderList(width int) string {
 		if !ok {
 			row = TreeRow{Entry: entry, Depth: result.Depth}
 		}
-		name := entry.Name
+		name := displayText(entry.Name)
 		if entry.IsDir {
 			name += "/"
 		}
@@ -317,7 +318,7 @@ func (m Model) renderList(width int) string {
 		}
 		label := indent + icon + name
 		if result.Line > 0 {
-			label = fmt.Sprintf("%s:%d %s", name, result.Line, result.Snippet)
+			label = fmt.Sprintf("%s:%d %s", name, result.Line, displayText(result.Snippet))
 		}
 		line := truncate(label, innerW)
 		if entry.IsDir {
@@ -366,9 +367,9 @@ func (m Model) renderDiffList(width int) string {
 	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	for i := start; i < len(m.diffChanges) && len(lines) < innerH; i++ {
 		change := m.diffChanges[i]
-		label := fmt.Sprintf("%s %-9s %s", diffStatusText(change), diffKindLabel(change), change.Path)
+		label := fmt.Sprintf("%s %-9s %s", diffStatusText(change), diffKindLabel(change), displayText(change.Path))
 		if change.OldPath != "" {
-			label = fmt.Sprintf("%s %-9s %s -> %s", diffStatusText(change), diffKindLabel(change), change.OldPath, change.Path)
+			label = fmt.Sprintf("%s %-9s %s -> %s", diffStatusText(change), diffKindLabel(change), displayText(change.OldPath), displayText(change.Path))
 		}
 		line := truncate(label, innerW)
 		switch change.Kind {
@@ -394,7 +395,7 @@ func (m Model) renderDiffPane(width int) string {
 	innerH := max(4, height-2)
 	title := "Diff"
 	if change, ok := m.selectedDiffChange(); ok {
-		title = change.Path
+		title = displayText(change.Path)
 	}
 	header := m.styles.Highlight.Render(truncate(title, innerW))
 	content := m.renderDiffContent()
@@ -444,7 +445,7 @@ func (m Model) renderPreview(width int) string {
 	if title == "" {
 		title = filepath.Base(m.selectedPathForStatus())
 	}
-	header := m.styles.Highlight.Render(title)
+	header := m.styles.Highlight.Render(displayText(title))
 	content := m.previewViewport.View()
 	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
 	return panel.Width(width - 2).Height(height).Render(body)
@@ -461,7 +462,7 @@ func (m Model) renderPreviewContent() string {
 func (m Model) renderPreviewContentFor(preview navfs.Preview, path string) string {
 	content := preview.Content
 	if preview.Kind != navfs.PreviewText {
-		return content
+		return displayText(content)
 	}
 	if path == "" {
 		path = preview.Path
@@ -568,11 +569,13 @@ func (m Model) renderEditor(width int, buf *editor.Buffer) string {
 	editorFocused := m.focus == FocusEditor
 	if active != nil {
 		path := statusPath(active.Path)
-		maxPath := max(0, innerW-lipgloss.Width(active.Name)-1)
+		name := displayText(active.Name)
+		displayPath := displayText(path)
+		maxPath := max(0, innerW-lipgloss.Width(name)-1)
 		if editorFocused {
-			title = m.styles.Highlight.Render(active.Name) + " " + m.styles.Dim.Render(clip(path, maxPath))
+			title = m.styles.Highlight.Render(name) + " " + m.styles.Dim.Render(clip(displayPath, maxPath))
 		} else {
-			title = m.styles.TreeDim.Render(active.Name + " " + clip(path, maxPath))
+			title = m.styles.TreeDim.Render(name + " " + clip(displayPath, maxPath))
 		}
 	}
 	lines := buf.VisibleHighlighted(innerW, innerH-1, func(path, line string) string {
@@ -620,13 +623,13 @@ func (m Model) renderIdleBrand(width, height int) string {
 }
 
 func (m Model) renderFooter() string {
-	status := m.statusMessage
+	status := displayText(m.statusMessage)
 	if status == "" {
 		return m.renderFooterKeyBar()
 	}
 	cmd := m.lastCommandHint
 	if cmd != "" {
-		status += " | " + m.styles.Command.Render(cmd)
+		status += " | " + m.styles.Command.Render(displayText(cmd))
 	}
 	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
 }
@@ -641,7 +644,7 @@ func (m Model) renderFooterKeyBar() string {
 	}
 	if m.lastCommandHint != "" {
 		parts = append(parts, m.styles.FooterSeparator.Render(" | "))
-		parts = append(parts, m.styles.Command.Render(m.lastCommandHint))
+		parts = append(parts, m.styles.Command.Render(displayText(m.lastCommandHint)))
 	}
 	status := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
@@ -716,22 +719,22 @@ func (m Model) footerHints() []footerHint {
 func (m Model) renderModal() string {
 	switch m.mode {
 	case ModeConfirmDelete:
-		name := m.pendingDelete.Name
+		name := displayText(m.pendingDelete.Name)
 		return m.styles.Modal.Render("Safe delete `" + name + "`?\n\nPress y to move it to .navia-trash.\nPress Esc to cancel.")
 	case ModeRename:
-		return m.styles.Modal.Render("Rename\n\n" + m.input.View())
+		return m.styles.Modal.Render("Rename\n\n" + m.safeInputView())
 	case ModeNewFile:
-		return m.styles.Modal.Render("Create new file\n\n" + m.input.View())
+		return m.styles.Modal.Render("Create new file\n\n" + m.safeInputView())
 	case ModeNewDir:
-		return m.styles.Modal.Render("Create new directory\n\n" + m.input.View())
+		return m.styles.Modal.Render("Create new directory\n\n" + m.safeInputView())
 	case ModeGoToPath:
-		return m.styles.Modal.Render("Go to path\n\n" + m.input.View())
+		return m.styles.Modal.Render("Go to path\n\n" + m.safeInputView())
 	case ModeDiffCommit:
-		return m.styles.Modal.Render("Commit changes\n\n" + m.input.View())
+		return m.styles.Modal.Render("Commit changes\n\n" + m.safeInputView())
 	case ModeDiffConfirmRestore:
-		return m.styles.Modal.Render("Restore `" + m.pendingDiffAction.Path + "`?\n\nThis discards working tree changes or removes an untracked file.\nPress y to continue.\nPress Esc to cancel.")
+		return m.styles.Modal.Render("Restore `" + displayText(m.pendingDiffAction.Path) + "`?\n\nThis discards working tree changes or removes an untracked file.\nPress y to continue.\nPress Esc to cancel.")
 	case ModeDiffConfirmRemove:
-		return m.styles.Modal.Render("Remove `" + m.pendingDiffAction.Path + "`?\n\nTracked files use git rm. Untracked files are deleted from disk.\nPress y to continue.\nPress Esc to cancel.")
+		return m.styles.Modal.Render("Remove `" + displayText(m.pendingDiffAction.Path) + "`?\n\nTracked files use git rm. Untracked files are deleted from disk.\nPress y to continue.\nPress Esc to cancel.")
 	default:
 		return ""
 	}
@@ -872,6 +875,14 @@ func clipStyled(s string, width int) string {
 		return ""
 	}
 	return termansi.Truncate(s, width, "")
+}
+
+func displayText(s string) string {
+	return textsafe.Display(s)
+}
+
+func (m Model) safeInputView() string {
+	return m.input.PromptStyle.Render(m.input.Prompt) + displayText(m.input.Value())
 }
 
 func center(s string, width int) string {

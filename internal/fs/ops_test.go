@@ -25,6 +25,11 @@ func TestRenameAndCreateValidateNames(t *testing.T) {
 	if _, err := Rename(target, ""); err == nil {
 		t.Fatal("Rename accepted empty name")
 	}
+	for _, name := range []string{"../escape.txt", "nested/file.txt", "/tmp/escape.txt", ".", ".."} {
+		if _, err := Rename(target, name); err == nil {
+			t.Fatalf("Rename accepted unsafe name %q", name)
+		}
+	}
 	existing := filepath.Join(dir, "exists.txt")
 	must(t, os.WriteFile(existing, []byte("x"), 0o644))
 	if _, err := Rename(target, "exists.txt"); err == nil {
@@ -41,6 +46,11 @@ func TestRenameAndCreateValidateNames(t *testing.T) {
 	if _, err := CreateFile(dir, ""); err == nil {
 		t.Fatal("CreateFile accepted empty name")
 	}
+	for _, name := range []string{"../escape.txt", "nested/file.txt", "/tmp/escape.txt", ".", ".."} {
+		if _, err := CreateFile(dir, name); err == nil {
+			t.Fatalf("CreateFile accepted unsafe name %q", name)
+		}
+	}
 	if _, err := CreateFile(dir, "created.txt"); err == nil {
 		t.Fatal("CreateFile overwrote existing file")
 	}
@@ -54,6 +64,11 @@ func TestRenameAndCreateValidateNames(t *testing.T) {
 	}
 	if _, err := CreateDir(dir, ""); err == nil {
 		t.Fatal("CreateDir accepted empty name")
+	}
+	for _, name := range []string{"../escape", "nested/dir", "/tmp/escape", ".", ".."} {
+		if _, err := CreateDir(dir, name); err == nil {
+			t.Fatalf("CreateDir accepted unsafe name %q", name)
+		}
 	}
 }
 
@@ -107,5 +122,23 @@ func TestMovePathFallsBackToCopyAndRemove(t *testing.T) {
 	}
 	if _, err := os.Stat(src); err != nil {
 		t.Fatalf("source should remain after failed move: %v", err)
+	}
+}
+
+func TestCopyAndMoveRejectDirectoryIntoItself(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	nested := filepath.Join(src, "nested")
+	must(t, os.MkdirAll(nested, 0o755))
+	must(t, os.WriteFile(filepath.Join(src, "file.txt"), []byte("data"), 0o644))
+
+	if err := CopyPath(src, filepath.Join(nested, "copy")); err == nil {
+		t.Fatal("CopyPath allowed directory copy into itself")
+	}
+	if err := MovePath(src, filepath.Join(nested, "moved")); err == nil {
+		t.Fatal("MovePath allowed directory move into itself")
+	}
+	if _, err := os.Stat(filepath.Join(src, "file.txt")); err != nil {
+		t.Fatalf("source should remain after rejected self operation: %v", err)
 	}
 }
