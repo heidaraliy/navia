@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type bufferWriteCloser struct {
@@ -186,6 +187,23 @@ func TestStartAndCloseWithFakeServer(t *testing.T) {
 	}
 	if _, err := Start(filepath.Join(dir, "missing"), dir); err == nil {
 		t.Fatal("Start with missing command returned nil")
+	}
+}
+
+func TestStartTimesOutWhenServerDoesNotRespond(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hanging-lsp")
+	body := "#!/bin/sh\nsleep 5\n"
+	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	if _, err := StartWithTimeout(script, dir, 50*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("StartWithTimeout error = %v, want timeout", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("StartWithTimeout took too long: %s", elapsed)
 	}
 }
 

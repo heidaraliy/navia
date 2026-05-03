@@ -99,6 +99,20 @@ func TestSafeDeleteErrorsForMissingPath(t *testing.T) {
 	}
 }
 
+func TestSafeDeleteRejectsOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	must(t, os.WriteFile(outside, []byte("do not move"), 0o644))
+
+	if _, err := SafeDelete(outside, root); err == nil {
+		t.Fatal("SafeDelete allowed outside-root path")
+	}
+	if data, err := os.ReadFile(outside); err != nil || string(data) != "do not move" {
+		t.Fatalf("outside file changed after rejected delete: %q %v", string(data), err)
+	}
+}
+
 func TestCopyAndMovePath(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "a.txt")

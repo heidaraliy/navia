@@ -34,6 +34,22 @@ func TestHighlightLineWithSearchHighlightsPlainFallback(t *testing.T) {
 	}
 }
 
+func TestHighlightEscapesUntrustedTerminalControls(t *testing.T) {
+	r := New("navia")
+	for _, out := range []string{
+		r.HighlightLine("unknown.nope", "alpha\x1b]52;c;boom\x07"),
+		r.HighlightLine("notes.md", "# title\x1b[2J"),
+		r.HighlightLine("main.go", "package main\x1b[2J"),
+	} {
+		if strings.Contains(out, "\x1b]") || strings.Contains(out, "\x1b[2J") || strings.Contains(out, "\x07") {
+			t.Fatalf("highlight left unsafe terminal controls in %q", out)
+		}
+		if !strings.Contains(out, `\x1b`) {
+			t.Fatalf("highlight did not render escaped control visibly: %q", out)
+		}
+	}
+}
+
 func TestMarkdownRichHighlighting(t *testing.T) {
 	r := New("navia")
 	heading := r.HighlightLine("notes.md", "# Roadmap")

@@ -1,26 +1,30 @@
+# typed: strict
+# frozen_string_literal: true
+
+# Homebrew formula for Navia.
 class Navia < Formula
   desc "Terminal micro-IDE for project navigation, editing, search, and git review"
   homepage "https://github.com/heidaraliy/navia"
-  version "0.1.0"
+  version "0.1.3"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/heidaraliy/navia/releases/download/v0.1.0/navia_0.1.0_darwin_arm64.tar.gz"
-      sha256 "0cc6b735771ab0a3e0cc0cd0d9d551dbc161480c3699ef7f336d9c87638eba77"
+      url "https://github.com/heidaraliy/navia/releases/download/v0.1.3/navia_0.1.3_darwin_arm64.tar.gz"
+      sha256 "9031a7de80d25fb7ce8dff2778e43d8741386a04916fb05a5afdfad10d42c9b8"
     else
-      url "https://github.com/heidaraliy/navia/releases/download/v0.1.0/navia_0.1.0_darwin_amd64.tar.gz"
-      sha256 "179c08eb02d2cf4dd4fc7bc38c340102ed7c409ad02536909cc477e4457673e3"
+      url "https://github.com/heidaraliy/navia/releases/download/v0.1.3/navia_0.1.3_darwin_amd64.tar.gz"
+      sha256 "5c5bdf66e8f0324fdd790b067c6188544aa0ec5af0d0376267fa5a31d2be642a"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
-      url "https://github.com/heidaraliy/navia/releases/download/v0.1.0/navia_0.1.0_linux_arm64.tar.gz"
-      sha256 "557e1b626794c9b232ac0e7fb58cd1a971ad1bccb73ed65349708a5921fe1c7b"
+      url "https://github.com/heidaraliy/navia/releases/download/v0.1.3/navia_0.1.3_linux_arm64.tar.gz"
+      sha256 "ca82fbfa531b53ba38cad6e9e639d6d077b78e3a01abc5a0a77b3b171547d5d4"
     else
-      url "https://github.com/heidaraliy/navia/releases/download/v0.1.0/navia_0.1.0_linux_amd64.tar.gz"
-      sha256 "8977e6c10fdeb02524e113f82d4cde2a269052ffc03c92b9fe87f34a18665365"
+      url "https://github.com/heidaraliy/navia/releases/download/v0.1.3/navia_0.1.3_linux_amd64.tar.gz"
+      sha256 "1306ceb74535451c2b69a230d6e23383599b1be6c7c8d6387b15eb1d15088f1c"
     end
   end
 
@@ -29,6 +33,6 @@ class Navia < Formula
   end
 
   test do
-    assert_match "navia 0.1.0", shell_output("#{bin}/navia --version")
+    assert_match "navia 0.1.3", shell_output("#{bin}/navia --version")
   end
 end

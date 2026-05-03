@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,13 +100,13 @@ func Diff(root string, change Change, maxBytes int) (string, error) {
 	var out []byte
 	var err error
 	if hasHead(root) {
-		out, err = gitOutput(root, "diff", "--no-ext-diff", "--patch", "HEAD", "--", change.Path)
+		out, err = gitOutputLimited(root, maxBytes, "diff", "--no-ext-diff", "--patch", "HEAD", "--", change.Path)
 		if err != nil {
 			return "", err
 		}
 	}
 	if len(out) == 0 {
-		out, err = gitOutput(root, "diff", "--no-ext-diff", "--patch", "--cached", "--", change.Path)
+		out, err = gitOutputLimited(root, maxBytes, "diff", "--no-ext-diff", "--patch", "--cached", "--", change.Path)
 		if err != nil {
 			return "", err
 		}
@@ -299,13 +300,22 @@ func untrackedDiff(root, path string, maxBytes int) (string, error) {
 	if info.IsDir() {
 		return "Untracked directory: " + path, nil
 	}
-	data, err := os.ReadFile(full)
+	file, err := os.Open(full)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+	limit := int64(maxBytes)
+	if limit <= 0 {
+		limit = 256 * 1024
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return "", err
 	}
 	truncated := false
-	if maxBytes > 0 && len(data) > maxBytes {
-		data = data[:maxBytes]
+	if int64(len(data)) > limit {
+		data = data[:limit]
 		truncated = true
 	}
 	if !utf8.Valid(data) || bytes.IndexByte(data, 0) >= 0 {
@@ -377,6 +387,58 @@ func gitOutput(root string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(string(out)))
 	}
 	return out, nil
+}
+
+func gitOutputLimited(root string, maxBytes int, args ...string) ([]byte, error) {
+	if maxBytes <= 0 {
+		return gitOutput(root, args...)
+	}
+	var stdout limitedBuffer
+	stdout.limit = maxBytes
+	var stderr bytes.Buffer
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if stdout.truncated {
+		out := stdout.Bytes()
+		out = append(out, []byte("\n... truncated ...\n")...)
+		return out, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+type limitedBuffer struct {
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *limitedBuffer) Bytes() []byte {
+	return b.buf.Bytes()
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b.limit <= 0 || b.truncated {
+		return len(p), nil
+	}
+	remaining := b.limit - b.buf.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		b.buf.Write(p[:remaining])
+		b.truncated = true
+		return len(p), nil
+	}
+	if _, err := b.buf.Write(p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func gitRun(root string, args ...string) error {

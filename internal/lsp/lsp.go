@@ -13,14 +13,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Client struct {
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	out    *bufio.Reader
-	nextID int
-	mu     sync.Mutex
+	cmd     *exec.Cmd
+	in      io.WriteCloser
+	out     *bufio.Reader
+	nextID  int
+	mu      sync.Mutex
+	timeout time.Duration
 }
 
 type Location struct {
@@ -29,11 +31,18 @@ type Location struct {
 	Character int
 }
 
+const defaultRequestTimeout = 5 * time.Second
+
 func Start(command, root string) (*Client, error) {
-	if _, err := exec.LookPath(command); err != nil {
+	return StartWithTimeout(command, root, defaultRequestTimeout)
+}
+
+func StartWithTimeout(command, root string, timeout time.Duration) (*Client, error) {
+	resolved, err := exec.LookPath(command)
+	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(command)
+	cmd := exec.Command(resolved)
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -45,7 +54,7 @@ func Start(command, root string) (*Client, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	c := &Client{cmd: cmd, in: in, out: bufio.NewReader(outPipe), nextID: 1}
+	c := &Client{cmd: cmd, in: in, out: bufio.NewReader(outPipe), nextID: 1, timeout: timeout}
 	params := map[string]any{
 		"processId": nil,
 		"rootUri":   fileURI(root),
@@ -57,6 +66,7 @@ func Start(command, root string) (*Client, error) {
 		},
 	}
 	if _, err := c.request("initialize", params); err != nil {
+		_ = c.Close()
 		return nil, err
 	}
 	_ = c.notify("initialized", map[string]any{})
@@ -126,7 +136,7 @@ func (c *Client) request(method string, params any) (json.RawMessage, error) {
 		return nil, err
 	}
 	for {
-		msg, err := c.read()
+		msg, err := c.readWithTimeout()
 		if err != nil {
 			return nil, err
 		}
@@ -147,6 +157,28 @@ func (c *Client) request(method string, params any) (json.RawMessage, error) {
 			return nil, errors.New(envelope.Error.Message)
 		}
 		return envelope.Result, nil
+	}
+}
+
+func (c *Client) readWithTimeout() ([]byte, error) {
+	timeout := c.timeout
+	if timeout <= 0 {
+		timeout = defaultRequestTimeout
+	}
+	type result struct {
+		msg []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		msg, err := c.read()
+		done <- result{msg: msg, err: err}
+	}()
+	select {
+	case res := <-done:
+		return res.msg, res.err
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("lsp response timed out after %s", timeout)
 	}
 }
 

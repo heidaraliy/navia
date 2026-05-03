@@ -8,7 +8,8 @@ tools/release/generate_homebrew_formula.sh v0.1.0 /tmp/navia-release/navia_0.1.0
 ```
 
 The generated formula is intended for the `heidaraliy/homebrew-tap` repository
-at `Formula/navia.rb`.
+at `Formula/navia.rb`. The generator validates every emitted `sha256` as a
+64-character hexadecimal SHA-256 value.
 
 Validate tap changes with:
 

@@ -88,6 +88,35 @@ func TestDiffWorksBeforeFirstCommit(t *testing.T) {
 	}
 }
 
+func TestTrackedDiffHonorsByteLimit(t *testing.T) {
+	root := initRepo(t)
+	writeFile(t, filepath.Join(root, "tracked.txt"), "base\n")
+	runGit(t, root, "add", "tracked.txt")
+	runGit(t, root, "commit", "-m", "initial")
+	writeFile(t, filepath.Join(root, "tracked.txt"), strings.Repeat("changed\n", 200))
+
+	diff, err := Diff(root, Change{Path: "tracked.txt", Kind: ChangeModified}, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diff) > 256 || !strings.Contains(diff, "truncated") {
+		t.Fatalf("tracked diff not bounded/truncated: len=%d\n%s", len(diff), diff)
+	}
+}
+
+func TestUntrackedDiffReadsOnlyLimit(t *testing.T) {
+	root := initRepo(t)
+	writeFile(t, filepath.Join(root, "large.txt"), strings.Repeat("x", 1024*1024))
+
+	diff, err := Diff(root, Change{Path: "large.txt", Kind: ChangeUntracked}, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diff) > 512 || !strings.Contains(diff, "truncated") {
+		t.Fatalf("untracked diff not bounded/truncated: len=%d\n%s", len(diff), diff)
+	}
+}
+
 func TestValidateRelPathRejectsEscapes(t *testing.T) {
 	root := t.TempDir()
 	for _, path := range []string{"../outside", "/tmp/outside", ""} {
