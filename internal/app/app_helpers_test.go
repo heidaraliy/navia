@@ -660,6 +660,27 @@ func TestUpdateEditorWindowAndKeyActions(t *testing.T) {
 	}
 }
 
+func TestUpdateEditorPastesLiteralRunesInInsertMode(t *testing.T) {
+	buf := editor.NewScratch("scratch.txt")
+	buf.Mode = editor.Insert
+	m := Model{focus: FocusEditor, editorTabs: []*editor.Buffer{buf}, activeTab: 0}
+
+	updated, _ := m.updateEditor(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("alpha beta\nsecond"), Paste: true})
+	got := updated.(Model)
+	if value := got.activeBuffer().Value(); value != "alpha beta\nsecond" {
+		t.Fatalf("paste value = %q", value)
+	}
+	if got.activeBuffer().Dirty != true {
+		t.Fatal("paste should mark buffer dirty")
+	}
+
+	updated, _ = got.updateEditor(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" line")})
+	got = updated.(Model)
+	if value := got.activeBuffer().Value(); value != "alpha beta\nsecond line" {
+		t.Fatalf("batched input value = %q", value)
+	}
+}
+
 func TestLSPCommandsAndHandlers(t *testing.T) {
 	root := initAppRepo(t)
 	goFile := filepath.Join(root, "main.go")
