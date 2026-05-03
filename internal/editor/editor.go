@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/heidaraliy/navia/internal/textsafe"
 )
 
 type Mode int
@@ -1628,6 +1629,7 @@ func isNumber(s string) bool {
 }
 
 func renderLine(s string, col int, insert bool) string {
+	s = textsafe.Content(s)
 	var out strings.Builder
 	displayCol := 0
 	cursorDrawn := false

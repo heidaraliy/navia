@@ -42,6 +42,20 @@ sha_for() {
   awk -v asset="$asset" '$2 == asset { print $1 }' "$checksums"
 }
 
+require_sha() {
+  local asset="$1"
+  local value="$2"
+
+  if [[ -z "$value" ]]; then
+    echo "missing checksum for $asset in $checksums" >&2
+    exit 2
+  fi
+  if [[ ! "$value" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+    echo "checksum for $asset must be exactly 64 hex characters" >&2
+    exit 2
+  fi
+}
+
 darwin_amd64="navia_${version}_darwin_amd64.tar.gz"
 darwin_arm64="navia_${version}_darwin_arm64.tar.gz"
 linux_amd64="navia_${version}_linux_amd64.tar.gz"
@@ -52,14 +66,16 @@ sha_darwin_arm64="$(sha_for "$darwin_arm64")"
 sha_linux_amd64="$(sha_for "$linux_amd64")"
 sha_linux_arm64="$(sha_for "$linux_arm64")"
 
-for value in "$sha_darwin_amd64" "$sha_darwin_arm64" "$sha_linux_amd64" "$sha_linux_arm64"; do
-  if [[ -z "$value" ]]; then
-    echo "missing required macOS/Linux archive checksum in $checksums" >&2
-    exit 2
-  fi
-done
+require_sha "$darwin_amd64" "$sha_darwin_amd64"
+require_sha "$darwin_arm64" "$sha_darwin_arm64"
+require_sha "$linux_amd64" "$sha_linux_amd64"
+require_sha "$linux_arm64" "$sha_linux_arm64"
 
 cat <<FORMULA
+# typed: strict
+# frozen_string_literal: true
+
+# Homebrew formula for Navia.
 class Navia < Formula
   desc "Terminal micro-IDE for project navigation, editing, search, and git review"
   homepage "https://github.com/heidaraliy/navia"

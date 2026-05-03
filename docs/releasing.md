@@ -59,6 +59,9 @@ gh release download v0.1.0 --pattern 'navia_0.1.0_checksums.txt' --dir /tmp/navi
 tools/release/generate_homebrew_formula.sh v0.1.0 /tmp/navia-release/navia_0.1.0_checksums.txt > packaging/homebrew/navia.rb
 ```
 
+The formula generator rejects missing or non-hex SHA-256 values before writing
+formula output. Do not hand-edit checksum values around that validation.
+
 Copy the generated formula to `heidaraliy/homebrew-tap` as `Formula/navia.rb`,
 then validate the tap with:
 
@@ -74,6 +77,9 @@ brew uninstall navia
 ```bash
 NAVIA_INSTALL_DIR="$(mktemp -d)" sh install.sh
 ```
+
+The install script must verify the downloaded archive with `sha256sum` or
+`shasum`; it fails before downloading when neither checksum tool is available.
 
 ## What The Tag Does
 
