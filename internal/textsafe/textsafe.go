@@ -10,16 +10,22 @@ import (
 // It preserves printable UTF-8 and renders control bytes visibly so filenames
 // and file contents cannot smuggle terminal escape sequences.
 func Display(s string) string {
-	return sanitize(s, false)
+	return sanitize(s, false, false)
 }
 
 // Content is like Display but preserves tab characters for editor/file content
 // renderers that already handle tab expansion.
 func Content(s string) string {
-	return sanitize(s, true)
+	return sanitize(s, true, false)
 }
 
-func sanitize(s string, allowTab bool) string {
+// Multiline is for trusted UI blocks that need to keep line layout while still
+// escaping terminal control sequences embedded in dynamic fields.
+func Multiline(s string) string {
+	return sanitize(s, true, true)
+}
+
+func sanitize(s string, allowTab, allowNewline bool) string {
 	if s == "" {
 		return ""
 	}
@@ -34,7 +40,7 @@ func sanitize(s string, allowTab bool) string {
 			s = s[1:]
 			continue
 		}
-		if isUnsafeControl(r, allowTab) {
+		if isUnsafeControl(r, allowTab, allowNewline) {
 			writeRuneEscape(&out, r)
 			changed = true
 		} else {
@@ -48,8 +54,11 @@ func sanitize(s string, allowTab bool) string {
 	return out.String()
 }
 
-func isUnsafeControl(r rune, allowTab bool) bool {
+func isUnsafeControl(r rune, allowTab, allowNewline bool) bool {
 	if allowTab && r == '\t' {
+		return false
+	}
+	if allowNewline && (r == '\n' || r == '\r') {
 		return false
 	}
 	return r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f)

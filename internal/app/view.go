@@ -462,7 +462,7 @@ func (m Model) renderPreviewContent() string {
 func (m Model) renderPreviewContentFor(preview navfs.Preview, path string) string {
 	content := preview.Content
 	if preview.Kind != navfs.PreviewText {
-		return displayText(content)
+		return textsafe.Multiline(content)
 	}
 	if path == "" {
 		path = preview.Path
