@@ -35,3 +35,13 @@ func TestContentPreservesTabsButEscapesTerminalControls(t *testing.T) {
 		t.Fatalf("Content did not visibly escape terminal controls: %q", got)
 	}
 }
+
+func TestMultilinePreservesLayoutButEscapesTerminalControls(t *testing.T) {
+	got := Multiline("Directory\n\n1 folders\n0 files\x1b[2J")
+	if !strings.Contains(got, "Directory\n\n1 folders\n0 files") {
+		t.Fatalf("Multiline did not preserve newlines: %q", got)
+	}
+	if strings.Contains(got, "\x1b[2J") || !strings.Contains(got, `\x1b`) {
+		t.Fatalf("Multiline did not visibly escape terminal controls: %q", got)
+	}
+}

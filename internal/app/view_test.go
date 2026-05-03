@@ -252,3 +252,17 @@ func TestRenderPreviewContentBoundsLargeText(t *testing.T) {
 		t.Fatalf("preview missing render limit notice:\n%s", got)
 	}
 }
+
+func TestRenderPreviewContentPreservesDirectoryLayout(t *testing.T) {
+	m := Model{
+		preview: navfs.Preview{Kind: navfs.PreviewDir, Content: "Directory\n\n1 folders\n0 files\x1b[2J"},
+		styles:  ui.NewStyles(),
+	}
+	got := m.renderPreviewContent()
+	if !strings.Contains(got, "Directory\n\n1 folders\n0 files") {
+		t.Fatalf("directory preview layout was not preserved:\n%q", got)
+	}
+	if strings.Contains(got, "\x1b[2J") || !strings.Contains(got, `\x1b`) {
+		t.Fatalf("directory preview did not visibly escape terminal control: %q", got)
+	}
+}
