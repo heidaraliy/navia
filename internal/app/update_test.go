@@ -76,6 +76,43 @@ func TestEOpensSelectedFileInNaviaEditor(t *testing.T) {
 	}
 }
 
+func TestEditorToTreeRestoresActiveFileSelectionAndPreview(t *testing.T) {
+	root := t.TempDir()
+	active := filepath.Join(root, "active.txt")
+	other := filepath.Join(root, "other.txt")
+	writeAppFile(t, active, "active preview body\n")
+	writeAppFile(t, other, "other preview body\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.selectPath(active)
+	updated, _ := m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	m = updated.(Model)
+	m.selectPath(other)
+
+	updated, _ = m.updateEditor(tea.KeyMsg{Type: tea.KeyCtrlW})
+	m = updated.(Model)
+	updated, cmd := m.updateEditor(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	got := updated.(Model)
+	if got.focus != FocusTree {
+		t.Fatalf("focus = %v, want tree", got.focus)
+	}
+	if entry, ok := got.selected(); !ok || entry.Path != active {
+		t.Fatalf("selected = %#v, want %q", entry, active)
+	}
+	if cmd == nil {
+		t.Fatal("expected preview command")
+	}
+	if msg, ok := cmd().(previewLoadedMsg); ok {
+		got.applyPreviewLoaded(msg)
+	}
+	if got.preview.Path != active || !strings.Contains(got.preview.Content, "active preview body") {
+		t.Fatalf("preview path/content = %q/%q, want active file preview", got.preview.Path, got.preview.Content)
+	}
+}
+
 func TestHelpMenuPagesWithCtrlDAndCtrlU(t *testing.T) {
 	m, err := New(t.TempDir(), config.Default())
 	if err != nil {

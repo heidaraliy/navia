@@ -818,7 +818,9 @@ func TestViewRenderingHelpers(t *testing.T) {
 func TestViewRenderingDiffEditorModalHelpAndUtilities(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "edit.go")
+	previewPath := filepath.Join(root, "preview.txt")
 	writeAppFile(t, path, "package main\n")
+	writeAppFile(t, previewPath, "tree preview body\n")
 	m, err := New(root, config.Default())
 	if err != nil {
 		t.Fatal(err)
@@ -883,6 +885,19 @@ func TestViewRenderingDiffEditorModalHelpAndUtilities(t *testing.T) {
 	if got := m.renderRightPane(44); !strings.Contains(got, "edit.go") {
 		t.Fatalf("editor right pane = %q", got)
 	}
+	m.focus = FocusTree
+	m.selectPath(previewPath)
+	cmd := m.queuePreview()
+	if cmd == nil {
+		t.Fatal("expected tree preview command")
+	}
+	if msg, ok := cmd().(previewLoadedMsg); ok {
+		m.applyPreviewLoaded(msg)
+	}
+	if got := m.renderRightPane(44); !strings.Contains(got, "tree preview body") || strings.Contains(got, "package main") {
+		t.Fatalf("tree preview pane = %q", got)
+	}
+	m.focus = FocusEditor
 	if got := m.topRightMeta(); !strings.Contains(got, "Lines:") {
 		t.Fatalf("editor topRightMeta = %q", got)
 	}
