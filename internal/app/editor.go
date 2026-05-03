@@ -125,6 +125,11 @@ func (m Model) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Window command: h tree, l editor, w toggle."
 		return m, nil
 	}
+	keyMsg := tea.Key(msg)
+	if buf.Mode == editor.Insert && keyMsg.Type == tea.KeyRunes && (keyMsg.Paste || len(keyMsg.Runes) > 1) {
+		buf.InsertText(string(keyMsg.Runes))
+		return m, nil
+	}
 	beforeRegister := buf.Register
 	action := buf.HandleKey(key)
 	if buf.Register != "" && buf.Register != beforeRegister {
