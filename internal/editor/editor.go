@@ -476,6 +476,8 @@ func (b *Buffer) handleInsert(key string) Action {
 		b.pageUp(10)
 	case "tab":
 		b.insertText("\t")
+	case "space":
+		b.insertText(" ")
 	default:
 		if len([]rune(key)) == 1 {
 			b.insertText(key)
@@ -888,6 +890,39 @@ func (b *Buffer) insertText(s string) {
 	b.Lines[b.Row] = line[:b.Col] + s + line[b.Col:]
 	b.Col += len([]rune(s))
 	b.Dirty = true
+}
+
+// InsertText inserts literal terminal text at the cursor without interpreting it
+// as editor commands.
+func (b *Buffer) InsertText(text string) {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	if text == "" {
+		return
+	}
+	b.beginInsertUndo()
+	line := b.Lines[b.Row]
+	left, right := line[:b.Col], line[b.Col:]
+	parts := strings.Split(text, "\n")
+	if len(parts) == 1 {
+		b.Lines[b.Row] = left + text + right
+		b.Col += len(text)
+		b.Dirty = true
+		b.clampInsert()
+		return
+	}
+	b.Lines[b.Row] = left + parts[0]
+	insertAt := b.Row + 1
+	for _, part := range parts[1 : len(parts)-1] {
+		b.Lines = insertLine(b.Lines, insertAt, part)
+		insertAt++
+	}
+	last := parts[len(parts)-1]
+	b.Lines = insertLine(b.Lines, insertAt, last+right)
+	b.Row = insertAt
+	b.Col = len(last)
+	b.Dirty = true
+	b.clampInsert()
 }
 
 func (b *Buffer) backspace() {
