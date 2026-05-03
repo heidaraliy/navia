@@ -92,6 +92,7 @@ func (m Model) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.treeHidden = false
 			m.focus = FocusTree
 			m.statusMessage = "Tree focused."
+			return m, m.restoreTreePreviewFromActiveBuffer()
 		case "l", "right":
 			m.treeHidden = false
 			m.focus = FocusEditor
@@ -101,6 +102,7 @@ func (m Model) updateEditor(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.treeHidden = false
 				m.focus = FocusTree
 				m.statusMessage = "Tree focused."
+				return m, m.restoreTreePreviewFromActiveBuffer()
 			} else {
 				m.focus = FocusEditor
 				m.statusMessage = "Editor focused."

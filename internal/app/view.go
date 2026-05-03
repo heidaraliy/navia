@@ -425,7 +425,7 @@ func (m Model) renderDiffContent() string {
 }
 
 func (m Model) renderRightPane(width int) string {
-	if buf := m.activeBuffer(); buf != nil {
+	if buf := m.activeBuffer(); buf != nil && (m.focus == FocusEditor || m.treeHidden) {
 		return m.renderEditor(width, buf)
 	}
 	return m.renderPreview(width)
