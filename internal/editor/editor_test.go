@@ -82,6 +82,28 @@ func TestInsertModeTypingUsesOneUndoSnapshot(t *testing.T) {
 	}
 }
 
+func TestInsertModeSpaceAndLiteralTextInput(t *testing.T) {
+	b := NewScratch("x.txt")
+	b.Lines = []string{"hello"}
+	b.Dirty = false
+
+	b.HandleKey("A")
+	b.HandleKey("space")
+	b.InsertText("world\nfrom paste")
+	if got := b.Value(); got != "hello world\nfrom paste" {
+		t.Fatalf("value = %q", got)
+	}
+	if b.Row != 1 || b.Col != len("from paste") {
+		t.Fatalf("cursor = %d:%d", b.Row, b.Col)
+	}
+
+	b.HandleKey("esc")
+	b.HandleKey("u")
+	if got := b.Value(); got != "hello" {
+		t.Fatalf("undo value = %q, want original", got)
+	}
+}
+
 func TestVisualLineDeleteYanksBlock(t *testing.T) {
 	b := NewScratch("x.txt")
 	b.Lines = []string{"one", "two", "three"}
