@@ -29,6 +29,41 @@ func TestHelpIsGroupedByMode(t *testing.T) {
 	}
 }
 
+func TestRenderEscapesUntrustedNamesAndStatus(t *testing.T) {
+	m := Model{
+		rows: []ResultRow{{
+			Entry: navfs.FileEntry{Name: "bad\x1b]52;c;boom\x07.txt", Path: "/tmp/bad\x1b]52;c;boom\x07.txt"},
+		}},
+		preview:          navfs.Preview{Kind: navfs.PreviewBinary, Title: "bad\x1b[2J.txt", Content: "Binary\x1b[2J"},
+		previewViewport:  viewportForTest(40, 8),
+		pendingDelete:    navfs.FileEntry{Name: "bad\x1b[2J.txt"},
+		mode:             ModeConfirmDelete,
+		width:            80,
+		height:           24,
+		styles:           ui.NewStyles(),
+		statusMessage:    "selected bad\x1b]52;c;boom\x07.txt",
+		lastCommandHint:  "Shell equivalent: cat bad\x1b[2J.txt",
+		expandedDirs:     map[string]bool{},
+		treeRowByPath:    map[string]TreeRow{},
+		selectedIndex:    0,
+		previewRequestID: 1,
+	}
+
+	for name, rendered := range map[string]string{
+		"list":    m.renderList(40),
+		"preview": m.renderPreview(40),
+		"footer":  m.renderFooter(),
+		"modal":   m.renderModal(),
+	} {
+		if strings.Contains(rendered, "\x1b]") || strings.Contains(rendered, "\x1b[2J") || strings.Contains(rendered, "\x07") {
+			t.Fatalf("%s render left unsafe terminal controls in %q", name, rendered)
+		}
+		if !strings.Contains(rendered, `\x1b`) {
+			t.Fatalf("%s render did not show escaped controls visibly: %q", name, rendered)
+		}
+	}
+}
+
 func TestSearchTopLeftShowsTypeTagAndPlaceholder(t *testing.T) {
 	m := Model{mode: ModeFilter, searchMode: SearchFiles}
 	got := m.topLeft()

@@ -10,6 +10,7 @@ import (
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
+	"github.com/heidaraliy/navia/internal/textsafe"
 )
 
 type Renderer struct {
@@ -286,6 +287,7 @@ func styleMarkdownPart(style, value, query string) string {
 	if value == "" {
 		return ""
 	}
+	value = textsafe.Content(value)
 	if query == "" || !strings.Contains(strings.ToLower(value), strings.ToLower(query)) {
 		if style == "" {
 			return value
@@ -371,6 +373,7 @@ func (r Renderer) cacheSet(key, value string) {
 }
 
 func renderTokenValue(entry chroma.StyleEntry, value, query string) string {
+	value = textsafe.Content(value)
 	if query == "" {
 		return styleValue(entry, value)
 	}
@@ -417,6 +420,7 @@ func styleValue(entry chroma.StyleEntry, value string) string {
 }
 
 func highlightPlainSearch(line, query string) string {
+	line = textsafe.Content(line)
 	if query == "" || !strings.Contains(strings.ToLower(line), strings.ToLower(query)) {
 		return line
 	}

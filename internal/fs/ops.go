@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type OperationResult struct {
@@ -13,8 +14,8 @@ type OperationResult struct {
 }
 
 func Rename(path, newName string) (string, error) {
-	if newName == "" {
-		return "", errors.New("name cannot be empty")
+	if err := validateLeafName(newName); err != nil {
+		return "", err
 	}
 	target := filepath.Join(filepath.Dir(path), newName)
 	if _, err := os.Lstat(target); err == nil {
@@ -24,8 +25,8 @@ func Rename(path, newName string) (string, error) {
 }
 
 func CreateFile(dir, name string) (string, error) {
-	if name == "" {
-		return "", errors.New("name cannot be empty")
+	if err := validateLeafName(name); err != nil {
+		return "", err
 	}
 	path := filepath.Join(dir, name)
 	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o644)
@@ -36,8 +37,8 @@ func CreateFile(dir, name string) (string, error) {
 }
 
 func CreateDir(dir, name string) (string, error) {
-	if name == "" {
-		return "", errors.New("name cannot be empty")
+	if err := validateLeafName(name); err != nil {
+		return "", err
 	}
 	path := filepath.Join(dir, name)
 	return path, os.Mkdir(path, 0o755)
@@ -49,12 +50,22 @@ func CopyPath(src, dst string) error {
 		return err
 	}
 	if info.IsDir() {
+		if err := rejectDescendantDestination(src, dst); err != nil {
+			return err
+		}
+	}
+	if info.IsDir() {
 		return copyDir(src, dst)
 	}
 	return copyFile(src, dst, info.Mode())
 }
 
 func MovePath(src, dst string) error {
+	if info, err := os.Stat(src); err == nil && info.IsDir() {
+		if err := rejectDescendantDestination(src, dst); err != nil {
+			return err
+		}
+	}
 	if err := os.Rename(src, dst); err == nil {
 		return nil
 	}
@@ -62,6 +73,34 @@ func MovePath(src, dst string) error {
 		return err
 	}
 	return os.RemoveAll(src)
+}
+
+func validateLeafName(name string) error {
+	if name == "" {
+		return errors.New("name cannot be empty")
+	}
+	if filepath.IsAbs(name) || name == "." || name == ".." || filepath.Clean(name) != name {
+		return errors.New("name must be a single path segment")
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return errors.New("name must not contain path separators")
+	}
+	return nil
+}
+
+func rejectDescendantDestination(src, dst string) error {
+	srcAbs, err := filepath.Abs(src)
+	if err != nil {
+		return err
+	}
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return err
+	}
+	if IsSubpath(srcAbs, dstAbs) {
+		return errors.New("destination cannot be inside source")
+	}
+	return nil
 }
 
 func copyFile(src, dst string, mode os.FileMode) error {

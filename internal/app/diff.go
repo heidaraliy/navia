@@ -334,5 +334,6 @@ func parseHunkStart(line string) (int, int) {
 }
 
 func diffGutter(oldLine, newLine, content string) string {
+	content = displayText(content)
 	return fmt.Sprintf("%4s %4s │ %s", oldLine, newLine, content)
 }

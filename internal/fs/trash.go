@@ -1,12 +1,18 @@
 package fs
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
 )
 
-func SafeDelete(path, _ string) (string, error) {
+func SafeDelete(path, root string) (string, error) {
+	if root != "" {
+		if !IsSubpath(root, path) {
+			return "", errors.New("path is outside delete root")
+		}
+	}
 	trashDir, err := GlobalTrashDir()
 	if err != nil {
 		return "", err

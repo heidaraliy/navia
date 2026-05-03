@@ -32,6 +32,16 @@ need() {
 need curl
 need tar
 
+checksum_command=""
+if command -v sha256sum >/dev/null 2>&1; then
+  checksum_command="sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  checksum_command="shasum"
+else
+  echo "navia install: sha256sum or shasum is required for checksum verification" >&2
+  exit 1
+fi
+
 case "$(uname -s)" in
   Darwin) os="darwin" ;;
   Linux) os="linux" ;;
@@ -91,12 +101,22 @@ if [ -z "$checksum_line" ]; then
   exit 1
 fi
 
-if command -v sha256sum >/dev/null 2>&1; then
+checksum_value="${checksum_line%% *}"
+if [ "${#checksum_value}" -ne 64 ]; then
+  echo "navia install: checksum for $archive must be 64 hex characters" >&2
+  exit 1
+fi
+case "$checksum_value" in
+  *[!0123456789abcdefABCDEF]*)
+    echo "navia install: checksum for $archive must be 64 hex characters" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$checksum_command" = "sha256sum" ]; then
   (cd "$tmp" && printf '%s\n' "$checksum_line" | sha256sum -c -)
-elif command -v shasum >/dev/null 2>&1; then
-  (cd "$tmp" && printf '%s\n' "$checksum_line" | shasum -a 256 -c -)
 else
-  echo "navia install: sha256sum or shasum not found; skipping checksum verification" >&2
+  (cd "$tmp" && printf '%s\n' "$checksum_line" | shasum -a 256 -c -)
 fi
 
 tar -xzf "$tmp/$archive" -C "$tmp"

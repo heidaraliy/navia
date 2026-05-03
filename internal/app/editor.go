@@ -409,7 +409,7 @@ func editorModeLabel(buf *editor.Buffer) string {
 }
 
 func tabLabel(tab *editor.Buffer) string {
-	name := tab.Name
+	name := displayText(tab.Name)
 	if tab.Dirty {
 		name += "*"
 	}
