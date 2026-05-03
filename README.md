@@ -7,26 +7,61 @@
 <p><strong>A micro-IDE in your terminal.</strong></p>
 
 <p>
-Navia is a fast, keyboard-driven development environment for users
-that desire a programming experience contained within the terminal,
-but prefer navigation that succinctly executes <strong>intent</strong>.
+Navia is a fast, keyboard-driven micro-IDE for developers who live in the
+terminal, but still want navigation, preview, search, editing, and git review
+in one clean workspace.
+</p>
+
+<p>
+  <a href="https://github.com/heidaraliy/navia/releases">
+    <img alt="Release" src="https://img.shields.io/github/v/release/heidaraliy/navia?style=flat-square">
+  </a>
+  <a href="https://github.com/heidaraliy/navia/blob/main/LICENSE">
+    <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
+  </a>
+  <a href="https://go.dev/">
+    <img alt="Go 1.22+" src="https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat-square&logo=go&logoColor=white">
+  </a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square">
+  <img alt="Terminal UI" src="https://img.shields.io/badge/interface-TUI-purple?style=flat-square">
+</p>
+
+<p>
+  <img src="docs/assets/navia-demo.gif" alt="Navia demo" width="760">
 </p>
 
 </div>
 
 ---
 
+## Table of Contents
+
+- [Why Navia Exists](#why-navia-exists)
+- [Features](#features)
+- [Install](#install)
+- [Usage](#usage)
+- [Keybindings](#keybindings)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Releases](#releases)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Why Navia Exists
 
-Selfishly, I built Navia for myself. The terminal is powerful, but project navigation is still weirdly fragmented,
-at least for someone who was taught to program entirely in VSCode. With LLMs and CLI tools like Claude Code and
-Codex becoming vital tools, I started using the terminal more, in tandem with VSCode. 
+The terminal is powerful, but project navigation is still weirdly fragmented —
+at least for someone who was taught to program almost entirely in VS Code.
 
-Eventually, the back-and-forth swapping became a nuisance, and while jumping from `cd` to `ls` to `find` to `grep` to 
-`nvim` to `git diff` is great, it's not exactly what I'd call "fun". Feels more like starting with a 6mm socket and 
-trying every size until you get to the right one.
+As LLM tools like Claude Code and Codex became a bigger part of my workflow, I
+started living in the terminal more. Eventually, the back-and-forth between my
+editor, shell, file browser, search tools, and git commands became annoying.
 
-Navia gives you one focused surface for the stuff you do constantly inside a codebase:
+Jumping from `cd` to `ls` to `find` to `grep` to `nvim` to `git diff` works,
+but it is not exactly what I would call fun. It feels like starting with a 6mm
+socket and trying every size until one finally fits.
+
+Navia gives you one focused surface for the stuff you do constantly inside a
+codebase:
 
 - move around the tree
 - preview files without opening them
@@ -36,11 +71,23 @@ Navia gives you one focused surface for the stuff you do constantly inside a cod
 - stage, commit, and push changes
 - safely move, rename, copy, paste, and delete files
 
-It's definitely *not* trying to replace your editor or shell.
+It is definitely *not* trying to replace your editor or shell.
 
 It *is* trying to make the space between them way cleaner.
 
-## What You Get
+## Features
+
+| Feature | What it does |
+| --- | --- |
+| **Project cockpit** | Navigate a persistent project tree with fast keyboard movement, expandable directories, drill-in roots, filters, and a live preview pane. |
+| **Rich previews** | Preview directories, text files, source files, images, and binary metadata without opening a separate tool. |
+| **Recursive search** | Search file names or file contents from inside the TUI, or launch directly into either search mode. |
+| **Built-in modal editor** | Make quick edits with vim-style modes, motions, tabs, undo/redo, search, substitution, Markdown checkbox toggles, and save/quit commands. |
+| **External editor handoff** | Open the active buffer in your configured editor with `:nvim` when a change deserves the real blade. |
+| **Lightweight LSP** | Use `gopls` for Go definition and reference jumps when LSP support is enabled. |
+| **Git review mode** | Review diffs, stage/unstage files, restore/remove changes, commit, push, and refresh from one interface. |
+| **Safe file operations** | Create, rename, copy, cut, paste, and safe-delete files. Safe delete moves files to Navia trash by default. |
+| **Configurable defaults** | Tune hidden files, ignored names, preview limits, editor choice, safe delete, sorting, theme, and LSP settings. |
 
 ### Project Navigation
 
@@ -48,8 +95,8 @@ Navia gives you a persistent project tree with fast keyboard movement,
 expandable directories, drill-in roots, hidden-file filtering, ignored-name
 filtering, and a preview pane that follows your selection.
 
-You can use it as a lightweight file navigator, a project browser, or a quick
-way to understand a repo you just opened.
+Use it as a lightweight file navigator, a project browser, or a quick way to
+understand a repo you just opened.
 
 ### Rich Previews
 
@@ -97,6 +144,9 @@ LSP features:
 - jump to definition with `gd`
 - find references with `gr`
 - jump backward/forward through editor history
+
+The goal is not to become a bloated IDE in terminal cosplay. The goal is just
+to make common navigation and review loops faster.
 
 ### Git Review Mode
 
@@ -215,64 +265,79 @@ navia -f "file name"
 navia --version
 ```
 
-Startup modes:
+| Command | Description |
+| --- | --- |
+| `navia` | Open the current directory. |
+| `navia /path/to/project` | Open a specific directory. |
+| `navia -d` | Start in git diff mode. |
+| `navia -s "query"` | Start in recursive text search. |
+| `navia -f "query"` | Start in recursive file-name search. |
+| `navia --version` | Print the installed version. |
 
-- `navia`: open the current directory.
-- `navia /path/to/project`: open a specific directory.
-- `navia -d`: start in git diff mode.
-- `navia -s "query"`: start in recursive text search.
-- `navia -f "query"`: start in recursive file-name search.
-- `navia --version`: print the installed version.
-
-## Common Keys
-
-Tree mode:
-
-- `j` / `k` or arrow keys: move through entries.
-- `enter` / `l`: expand directories or open search results.
-- `h` / `backspace`: collapse or jump to the parent.
-- `L` / `shift+enter`: make the selected directory the root.
-- `/`: search recursively from the current directory.
-- `tab`: toggle file-name and text search while searching.
-- `g`: go to a path.
-- `n` / `N`: create a file or directory.
-- `r`: rename.
-- `y`, `x`, `p`: copy, cut, and paste.
-- `d`: safe delete.
-- `e` / `c`: open the selected file in the Navia editor.
-- `D`: open git diff mode.
-- `?`: help.
-- `q`: quit.
-
-Diff mode:
-
-- `s` / `u`: stage or unstage the selected file.
-- `R` / `D`: restore or remove the selected file.
-- `c` / `p`: commit or push the current branch.
-- `r`: refresh manually.
-- `esc`: return to the tree.
-
-Editor mode:
-
-- `i`, `a`, `I`, `A`, `o`, `O`: enter insert mode.
-- `h`, `j`, `k`, `l`, `w`, `b`, `e`: move the cursor.
-- `gg`, `G`, `:number`: jump by file position.
-- `space`: toggle the current Markdown task checkbox.
-- `v` / `V`: visual or visual-line selection.
-- `y`, `d`, `c`, `p`: yank, delete, change, and paste.
-- `u` / `ctrl+r`: undo and redo.
-- `/`, `n`, `N`: search inside the open buffer.
-- `gd` / `gr`: jump to definition or references when LSP is available.
-- `ctrl+o` / `ctrl+i`: jump backward or forward through editor history.
-- `:w`, `:q`, `:wq`, `:qa`: save and close commands.
-- `:e path`: open another file in a tab.
-- `:bn` / `:bp`, `gt` / `gT`: move between editor tabs.
-- `:theme`: list themes.
-- `:theme navia`: switch to the Navia syntax theme.
-- `:nvim`: open the active buffer in your configured external editor.
-- `ctrl+w h`, `ctrl+w l`, `ctrl+w o`: focus panes or use editor-only view.
+## Keybindings
 
 Press `?` inside Navia for the full in-app key reference.
+
+<details>
+<summary><strong>Tree mode</strong></summary>
+
+| Key | Action |
+| --- | --- |
+| `j` / `k` or arrow keys | Move through entries. |
+| `enter` / `l` | Expand directories or open search results. |
+| `h` / `backspace` | Collapse or jump to the parent. |
+| `L` / `shift+enter` | Make the selected directory the root. |
+| `/` | Search recursively from the current directory. |
+| `tab` | Toggle file-name and text search while searching. |
+| `g` | Go to a path. |
+| `n` / `N` | Create a file or directory. |
+| `r` | Rename. |
+| `y`, `x`, `p` | Copy, cut, and paste. |
+| `d` | Safe delete. |
+| `e` / `c` | Open the selected file in the Navia editor. |
+| `D` | Open git diff mode. |
+| `?` | Help. |
+| `q` | Quit. |
+
+</details>
+
+<details>
+<summary><strong>Diff mode</strong></summary>
+
+| Key | Action |
+| --- | --- |
+| `s` / `u` | Stage or unstage the selected file. |
+| `R` / `D` | Restore or remove the selected file. |
+| `c` / `p` | Commit or push the current branch. |
+| `r` | Refresh manually. |
+| `esc` | Return to the tree. |
+
+</details>
+
+<details>
+<summary><strong>Editor mode</strong></summary>
+
+| Key | Action |
+| --- | --- |
+| `i`, `a`, `I`, `A`, `o`, `O` | Enter insert mode. |
+| `h`, `j`, `k`, `l`, `w`, `b`, `e` | Move the cursor. |
+| `gg`, `G`, `:number` | Jump by file position. |
+| `space` | Toggle the current Markdown task checkbox. |
+| `v` / `V` | Visual or visual-line selection. |
+| `y`, `d`, `c`, `p` | Yank, delete, change, and paste. |
+| `u` / `ctrl+r` | Undo and redo. |
+| `/`, `n`, `N` | Search inside the open buffer. |
+| `gd` / `gr` | Jump to definition or references when LSP is available. |
+| `ctrl+o` / `ctrl+i` | Jump backward or forward through editor history. |
+| `:w`, `:q`, `:wq`, `:qa` | Save and close commands. |
+| `:e path` | Open another file in a tab. |
+| `:bn` / `:bp`, `gt` / `gT` | Move between editor tabs. |
+| `:theme` | List themes. |
+| `:theme navia` | Switch to the Navia syntax theme. |
+| `:nvim` | Open the active buffer in your configured external editor. |
+| `ctrl+w h`, `ctrl+w l`, `ctrl+w o` | Focus panes or use editor-only view. |
+
+</details>
 
 ## Configuration
 
@@ -351,6 +416,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor workflow and
 [AGENTS.md](AGENTS.md) for agent-specific orchestration.
 
 Keep changes small, tested, and explicit about filesystem safety.
+
+Navia touches real files. Correctness matters.
 
 ## License
 
