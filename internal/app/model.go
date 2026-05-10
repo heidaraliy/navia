@@ -132,6 +132,7 @@ type Model struct {
 	input                textinput.Model
 	lastCommandHint      string
 	statusMessage        string
+	statusRevision       int
 	treeRefreshSignature string
 	cfg                  config.Config
 	gitRoot              string
