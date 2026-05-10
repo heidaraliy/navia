@@ -359,6 +359,116 @@ func TestEnterOpensFileSearchResultInEditor(t *testing.T) {
 	}
 }
 
+func TestEscClosesSearchTabWithActionStatus(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "combat-plan.md")
+	other := filepath.Join(root, "notes.md")
+	writeAppFile(t, match, "alpha\n")
+	writeAppFile(t, other, "beta\n")
+
+	m, err := NewWithSearch(root, config.Default(), StartupSearch{Mode: SearchFiles, Query: "combat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.hasSearchTab() {
+		t.Fatal("expected active search state")
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected preview/status command after closing search")
+	}
+	if got.filter != "" || got.executedSearchQuery != "" || got.searchRunning {
+		t.Fatalf("search state still open: filter=%q executed=%q running=%v", got.filter, got.executedSearchQuery, got.searchRunning)
+	}
+	if got.statusMessage != "Closed search tab." {
+		t.Fatalf("status = %q", got.statusMessage)
+	}
+	if got.statusRevision == 0 {
+		t.Fatal("status revision should advance for transient action feedback")
+	}
+	if len(got.rows) != len(got.treeRows) {
+		t.Fatalf("rows = %d, want tree rows %d", len(got.rows), len(got.treeRows))
+	}
+}
+
+func TestFilterEscClosesPendingSearchWithActionStatus(t *testing.T) {
+	root := t.TempDir()
+	writeAppFile(t, filepath.Join(root, "combat-plan.md"), "alpha\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mode = ModeFilter
+	m.filter = "combat"
+	m.executedSearchQuery = ""
+	m.applyFilter()
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected preview/status command after closing pending search")
+	}
+	if got.mode != ModeNormal || got.filter != "" || got.executedSearchQuery != "" {
+		t.Fatalf("mode/search = %v/%q/%q", got.mode, got.filter, got.executedSearchQuery)
+	}
+	if got.statusMessage != "Closed search tab." {
+		t.Fatalf("status = %q", got.statusMessage)
+	}
+}
+
+func TestClosingLastEditorFromSearchClosesBothTabs(t *testing.T) {
+	root := t.TempDir()
+	match := filepath.Join(root, "combat-plan.md")
+	writeAppFile(t, match, "alpha\n")
+
+	m, err := NewWithSearch(root, config.Default(), StartupSearch{Mode: SearchFiles, Query: "combat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = m.openEditorTab(match)
+
+	updated, cmd := m.closeActiveTab(false)
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected preview command after returning to tree")
+	}
+	if len(got.editorTabs) != 0 || got.focus != FocusTree || got.treeHidden {
+		t.Fatalf("editor state = tabs %d focus %v hidden %v", len(got.editorTabs), got.focus, got.treeHidden)
+	}
+	if got.filter != "" || got.executedSearchQuery != "" || got.searchRunning {
+		t.Fatalf("search state still open: filter=%q executed=%q running=%v", got.filter, got.executedSearchQuery, got.searchRunning)
+	}
+	if got.statusMessage != "Closed editor tab. Closed search tab." {
+		t.Fatalf("status = %q", got.statusMessage)
+	}
+}
+
+func TestStatusMessageClearsOnlyCurrentRevision(t *testing.T) {
+	m := Model{statusMessage: "older", statusRevision: 4}
+	updated, cmd := m.Update(statusMsg("newer"))
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected status clear command")
+	}
+	if got.statusRevision != 5 || got.statusMessage != "newer" {
+		t.Fatalf("status revision/message = %d/%q", got.statusRevision, got.statusMessage)
+	}
+
+	updated, _ = got.Update(statusClearMsg{revision: 4})
+	stale := updated.(Model)
+	if stale.statusMessage != "newer" {
+		t.Fatalf("stale clear removed status: %q", stale.statusMessage)
+	}
+
+	updated, _ = got.Update(statusClearMsg{revision: got.statusRevision})
+	cleared := updated.(Model)
+	if cleared.statusMessage != "" {
+		t.Fatalf("current clear left status = %q", cleared.statusMessage)
+	}
+}
+
 func TestFilterEnterRunsSearchAsCommand(t *testing.T) {
 	root := t.TempDir()
 	match := filepath.Join(root, "combat-plan.md")
