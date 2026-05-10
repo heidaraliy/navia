@@ -67,15 +67,9 @@ func (m Model) renderTop() string {
 
 func (m Model) topLeft() string {
 	if m.mode == ModeFilter || m.filter != "" {
-		query := m.filter
-		queryStyle := m.styles.Highlight
-		if query == "" {
-			query = "enter query..."
-			queryStyle = m.styles.Dim
-		}
 		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
 			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
-			" " + queryStyle.Render(displayText(query))
+			" " + m.renderSearchQuery()
 	}
 	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
@@ -110,6 +104,29 @@ func (m Model) topTag(label string, bg, fg lipgloss.Color) string {
 
 func (m Model) commandCue(mode string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(commandCueColor(mode)).Underline(true)
+}
+
+func (m Model) renderSearchQuery() string {
+	cursor := m.searchCursor()
+	if m.filter == "" {
+		if m.mode == ModeFilter {
+			return cursor + " " + m.styles.Dim.Render("enter query...")
+		}
+		return m.styles.Dim.Render("enter query...")
+	}
+	query := m.styles.Highlight.Render(displayText(m.filter))
+	if m.mode == ModeFilter {
+		return query + cursor
+	}
+	return query
+}
+
+func (m Model) searchCursor() string {
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("16")).
+		Background(lipgloss.Color("229")).
+		Bold(true).
+		Render("|")
 }
 
 func commandCueColor(mode string) lipgloss.Color {
@@ -172,8 +189,10 @@ func (m Model) topContext() string {
 		path = gitPathLabel(m.gitRoot, m.cwd)
 	}
 	context := displayText(project) + "  " + displayText(path)
-	if m.mode == ModeFilter || m.filter != "" {
+	if m.mode == ModeFilter {
 		context = "tab toggles files/text  enter runs recursive search"
+	} else if m.filter != "" {
+		context = "/ refines search  esc clears results"
 	} else if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		context = diffSummaryText(m.diffSummary)
 	} else if buf := m.activeBuffer(); buf != nil {
@@ -303,23 +322,7 @@ func (m Model) renderList(width int) string {
 		if !ok {
 			row = TreeRow{Entry: entry, Depth: result.Depth}
 		}
-		name := displayText(entry.Name)
-		if entry.IsDir {
-			name += "/"
-		}
-		indent := strings.Repeat(" ", row.Depth)
-		icon := "  "
-		if entry.IsDir {
-			if row.Expanded {
-				icon = "▾ "
-			} else {
-				icon = "▸ "
-			}
-		}
-		label := indent + icon + name
-		if result.Line > 0 {
-			label = fmt.Sprintf("%s:%d %s", name, result.Line, displayText(result.Snippet))
-		}
+		label := m.resultLabel(result, row)
 		line := truncate(label, innerW)
 		if entry.IsDir {
 			if treeFocused {
@@ -341,6 +344,60 @@ func (m Model) renderList(width int) string {
 	}
 	content := m.styles.TreePane.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
 	return panel.Width(width - 2).Height(height).Render(content)
+}
+
+func (m Model) resultLabel(result ResultRow, row TreeRow) string {
+	entry := result.Entry
+	if m.hasSubmittedSearch() {
+		path := displayText(m.searchResultPath(entry.Path))
+		if entry.IsDir {
+			path += "/"
+		}
+		if result.Line > 0 {
+			return fmt.Sprintf("%s:%d %s", path, result.Line, displayText(result.Snippet))
+		}
+		return path
+	}
+	name := displayText(entry.Name)
+	if entry.IsDir {
+		name += "/"
+	}
+	indent := strings.Repeat(" ", row.Depth)
+	icon := "  "
+	if entry.IsDir {
+		if row.Expanded {
+			icon = "▾ "
+		} else {
+			icon = "▸ "
+		}
+	}
+	if result.Line > 0 {
+		return fmt.Sprintf("%s:%d %s", name, result.Line, displayText(result.Snippet))
+	}
+	return indent + icon + name
+}
+
+func (m Model) searchResultPath(path string) string {
+	if rel, err := filepath.Rel(m.cwd, path); err == nil && relInsideRoot(rel) {
+		if rel == "." {
+			return filepath.Base(path)
+		}
+		return filepath.ToSlash(rel)
+	}
+	if m.gitRoot != "" {
+		return filepath.ToSlash(git.Rel(m.gitRoot, path))
+	}
+	return statusPath(path)
+}
+
+func relInsideRoot(rel string) bool {
+	if rel == "." {
+		return true
+	}
+	if filepath.IsAbs(rel) || rel == ".." {
+		return false
+	}
+	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func (m Model) renderDiffList(width int) string {
@@ -786,7 +843,9 @@ func helpContent() string {
 		}),
 		helpSection("Search", [][2]string{
 			{"tab", "toggle file/text search"},
-			{"enter", "run search or open result"},
+			{"enter", "run search"},
+			{"arrows/jk", "move submitted results"},
+			{"enter/l", "open submitted result"},
 			{"esc", "clear search"},
 		}),
 		helpSection("Editor Normal", [][2]string{

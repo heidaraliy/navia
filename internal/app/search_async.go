@@ -20,6 +20,7 @@ type searchLoadedMsg struct {
 
 func (m *Model) startSearch() tea.Cmd {
 	query := strings.TrimSpace(m.filter)
+	m.filter = query
 	m.searchRequestID++
 	id := m.searchRequestID
 	m.searchRunning = true
@@ -85,5 +86,6 @@ func (m Model) handleSearchLoaded(msg searchLoadedMsg) (tea.Model, tea.Cmd) {
 	m.selectedIndex = 0
 	m.clampSelection()
 	m.statusMessage = msg.status
+	m.mode = ModeNormal
 	return m, m.queuePreview()
 }
