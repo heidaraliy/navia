@@ -16,9 +16,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	defer func() {
 		perfLogDuration("app.update", start, "msg", fmt.Sprintf("%T", msg))
 	}()
+	previousStatus := m.statusMessage
+	updated, cmd := m.update(msg)
+	if next, ok := updated.(Model); ok {
+		return next.withStatusTimeout(previousStatus, cmd)
+	}
+	return updated, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case autoRefreshMsg:
 		return m, tea.Batch(autoRefreshCmd(), m.handleAutoRefresh())
+	case statusClearMsg:
+		return m.handleStatusClear(msg), nil
 	case previewLoadedMsg:
 		m.applyPreviewLoaded(msg)
 		return m, nil
@@ -153,10 +164,10 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Editing search query."
 		}
 	case "esc":
-		m.filter = ""
-		m.applyFilter()
-		m.clampSelection()
-		return m, m.queuePreview()
+		if m.closeSearchTab() {
+			m.statusMessage = "Closed search tab."
+			return m, m.queuePreview()
+		}
 	case "r":
 		if entry, ok := m.selected(); ok {
 			m.enterMode(ModeRename, "rename> ", entry.Name)
@@ -204,6 +215,24 @@ func (m *Model) enterHelpMode(returnMode Mode) {
 	m.mode = ModeHelp
 	m.helpViewport.SetContent(helpContent())
 	m.helpViewport.GotoTop()
+}
+
+func (m Model) hasSearchTab() bool {
+	return strings.TrimSpace(m.filter) != "" || strings.TrimSpace(m.executedSearchQuery) != "" || m.searchRunning
+}
+
+func (m *Model) closeSearchTab() bool {
+	if !m.hasSearchTab() {
+		return false
+	}
+	m.filter = ""
+	m.executedSearchQuery = ""
+	m.searchRunning = false
+	m.recursiveRows = nil
+	m.recursiveRoot = ""
+	m.applyFilter()
+	m.clampSelection()
+	return true
 }
 
 func (m *Model) moveSelection(delta int) tea.Cmd {
@@ -336,7 +365,10 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.mode = ModeNormal
-		m.filter = ""
+		if m.closeSearchTab() {
+			m.statusMessage = "Closed search tab."
+		}
+		return m, m.queuePreview()
 	case "up":
 		if m.hasSubmittedSearch() {
 			return m, m.moveSelection(-1)

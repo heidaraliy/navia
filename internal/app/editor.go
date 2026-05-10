@@ -224,6 +224,7 @@ func (m Model) closeActiveTab(force bool) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Unsaved changes in `" + buf.Name + "`. Use :w or :q!."
 		return m, nil
 	}
+	searchWasOpen := m.hasSearchTab()
 	m.editorTabs = append(m.editorTabs[:m.activeTab], m.editorTabs[m.activeTab+1:]...)
 	if m.activeTab >= len(m.editorTabs) {
 		m.activeTab = len(m.editorTabs) - 1
@@ -232,6 +233,10 @@ func (m Model) closeActiveTab(force bool) (tea.Model, tea.Cmd) {
 		m.activeTab = 0
 		m.focus = FocusTree
 		m.treeHidden = false
+		if searchWasOpen && m.closeSearchTab() {
+			m.statusMessage = "Closed editor tab. Closed search tab."
+			return m, m.queuePreview()
+		}
 		m.statusMessage = "Closed editor tab."
 	} else {
 		m.statusMessage = "Closed `" + buf.Name + "`."
