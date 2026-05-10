@@ -163,7 +163,7 @@ func TestRecursiveSearchFilesAndText(t *testing.T) {
 	nested := filepath.Join(dir, "assets", "sprites")
 	must(t, os.MkdirAll(nested, 0o755))
 	file := filepath.Join(nested, "hero_idle.txt")
-	must(t, os.WriteFile(file, []byte("first\nneedle here\n"), 0o644))
+	must(t, os.WriteFile(file, []byte("first\nneedle here\nneedle again\n"), 0o644))
 
 	fileMatches, err := SearchFiles(dir, "hero", ScanOptions{ShowHidden: true, SortDirsFirst: true})
 	if err != nil {
@@ -177,8 +177,34 @@ func TestRecursiveSearchFilesAndText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(textMatches) == 0 || textMatches[0].Line != 2 {
-		t.Fatalf("expected recursive text match on line 2, got %#v", textMatches)
+	if len(textMatches) != 2 || textMatches[0].Line != 2 || textMatches[1].Line != 3 {
+		t.Fatalf("expected recursive text matches on lines 2 and 3, got %#v", textMatches)
+	}
+}
+
+func TestRecursiveSearchFilesMatchesPathTokens(t *testing.T) {
+	dir := t.TempDir()
+	wanted := filepath.Join(dir, "assets", "technoviolet", "item.json")
+	other := filepath.Join(dir, "assets", "neutral", "item.json")
+	must(t, os.MkdirAll(filepath.Dir(wanted), 0o755))
+	must(t, os.MkdirAll(filepath.Dir(other), 0o755))
+	must(t, os.WriteFile(wanted, []byte("{}"), 0o644))
+	must(t, os.WriteFile(other, []byte("{}"), 0o644))
+
+	matches, err := SearchFiles(dir, "item.json techno", ScanOptions{ShowHidden: true, SortDirsFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].Entry.Path != wanted {
+		t.Fatalf("path-token matches = %#v, want only %s", matches, wanted)
+	}
+
+	matches, err = SearchFiles(dir, "ITEM.JSON", ScanOptions{ShowHidden: true, SortDirsFirst: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("case-insensitive item matches = %#v, want both item.json files", matches)
 	}
 }
 

@@ -305,8 +305,8 @@ func TestNewWithSearchStartsFileSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.mode != ModeFilter {
-		t.Fatalf("mode = %v, want ModeFilter", m.mode)
+	if m.mode != ModeNormal {
+		t.Fatalf("mode = %v, want ModeNormal", m.mode)
 	}
 	if m.searchMode != SearchFiles || m.filter != "combat" || m.executedSearchQuery != "combat" {
 		t.Fatalf("search state = mode %v filter %q executed %q", m.searchMode, m.filter, m.executedSearchQuery)
@@ -387,8 +387,71 @@ func TestFilterEnterRunsSearchAsCommand(t *testing.T) {
 	if got.searchRunning {
 		t.Fatal("search should be complete")
 	}
+	if got.mode != ModeNormal {
+		t.Fatalf("mode after search = %v, want ModeNormal", got.mode)
+	}
 	if len(got.rows) != 1 || got.rows[0].Entry.Path != match {
 		t.Fatalf("rows = %#v, want %q", got.rows, match)
+	}
+}
+
+func TestFilterModeLetsJKTypeBeforeSearchSubmission(t *testing.T) {
+	m := Model{mode: ModeFilter}
+	updated, _ := m.updateFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := updated.(Model)
+	updated, _ = got.updateFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	got = updated.(Model)
+	if got.filter != "jk" {
+		t.Fatalf("filter = %q, want typed jk", got.filter)
+	}
+}
+
+func TestSubmittedSearchResultsNavigateAndOpenSelection(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "a-combat.md")
+	second := filepath.Join(root, "b-combat.md")
+	writeAppFile(t, first, "alpha\n")
+	writeAppFile(t, second, "beta\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mode = ModeFilter
+	m.filter = "combat"
+	updated, cmd := m.updateFilter(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected search command")
+	}
+	msg := cmd().(searchLoadedMsg)
+	updated, _ = got.handleSearchLoaded(msg)
+	got = updated.(Model)
+	if got.mode != ModeNormal || got.selectedIndex != 0 {
+		t.Fatalf("after load mode=%v selected=%d", got.mode, got.selectedIndex)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyDown})
+	got = updated.(Model)
+	if got.selectedIndex != 1 || got.filter != "combat" || got.executedSearchQuery != "combat" {
+		t.Fatalf("down changed selection/search incorrectly: selected=%d filter=%q executed=%q", got.selectedIndex, got.filter, got.executedSearchQuery)
+	}
+	got.mode = ModeFilter
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	got = updated.(Model)
+	if got.selectedIndex != 0 || got.filter != "combat" {
+		t.Fatalf("submitted k should navigate without editing: selected=%d filter=%q", got.selectedIndex, got.filter)
+	}
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got = updated.(Model)
+	if got.selectedIndex != 1 || got.filter != "combat" {
+		t.Fatalf("submitted j should navigate without editing: selected=%d filter=%q", got.selectedIndex, got.filter)
+	}
+
+	updated, _ = got.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got = updated.(Model)
+	if len(got.editorTabs) != 1 || got.editorTabs[0].Path != second {
+		t.Fatalf("editor tabs = %#v, want %q", got.editorTabs, second)
 	}
 }
 
