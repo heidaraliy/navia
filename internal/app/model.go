@@ -209,7 +209,7 @@ func (m *Model) StartSearch(search StartupSearch) {
 	m.searchMode = search.Mode
 	m.filter = query
 	m.executedSearchQuery = query
-	m.mode = ModeFilter
+	m.mode = ModeNormal
 	m.selectedIndex = 0
 	m.applyFilter()
 	m.clampSelection()
@@ -260,6 +260,11 @@ func (m *Model) applyFilter() {
 	}
 }
 
+func (m Model) hasSubmittedSearch() bool {
+	query := strings.TrimSpace(m.filter)
+	return query != "" && query == m.executedSearchQuery && !m.searchRunning
+}
+
 func (m *Model) applyFileSearch() {
 	needle := strings.ToLower(strings.TrimSpace(m.filter))
 	if needle == "" {
@@ -274,14 +279,16 @@ func (m *Model) applyFileSearch() {
 	m.ensureRecursiveRows()
 	m.rows = m.rows[:0]
 	for _, row := range m.recursiveRows {
-		if strings.Contains(strings.ToLower(row.Entry.Name), needle) ||
-			strings.Contains(strings.ToLower(row.Entry.Path), needle) {
+		if navfs.MatchFileQuery(m.cwd, row.Entry.Path, needle) {
 			m.rows = append(m.rows, row)
 			if len(m.rows) >= navfs.MaxSearchResults {
 				m.statusMessage = fmt.Sprintf("Showing first %d file matches.", navfs.MaxSearchResults)
 				return
 			}
 		}
+	}
+	if len(m.rows) == 0 {
+		m.statusMessage = "No file matches."
 	}
 }
 

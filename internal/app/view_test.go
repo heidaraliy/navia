@@ -1,6 +1,7 @@
 package app
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -72,10 +73,18 @@ func TestSearchTopLeftShowsTypeTagAndPlaceholder(t *testing.T) {
 			t.Fatalf("topLeft missing %q: %q", want, got)
 		}
 	}
+	if !strings.Contains(got, "|") {
+		t.Fatalf("topLeft missing search cursor: %q", got)
+	}
 	m.filter = "combat"
 	got = m.topLeft()
-	if !strings.Contains(got, "combat") || strings.Contains(got, "enter query...") {
+	if !strings.Contains(got, "combat") || !strings.Contains(got, "|") || strings.Contains(got, "enter query...") {
 		t.Fatalf("topLeft query state = %q", got)
+	}
+	m.mode = ModeNormal
+	got = m.topLeft()
+	if strings.Contains(got, "|") {
+		t.Fatalf("submitted search should not show editing cursor: %q", got)
 	}
 }
 
@@ -177,6 +186,28 @@ func TestFooterHintStylesKeepSingleBackground(t *testing.T) {
 	}
 	if m.footerKeyStyle(footerHint{"q", "quit"}).GetForeground() == m.footerKeyStyle(footerHint{"?", "help"}).GetForeground() {
 		t.Fatal("footer key styles should color-code action groups")
+	}
+}
+
+func TestSearchResultLabelsUseRelativePaths(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "assets", "technoviolet", "item.json")
+	m := Model{
+		cwd:                 root,
+		filter:              "item.json techno",
+		executedSearchQuery: "item.json techno",
+		rows: []ResultRow{{
+			Entry:   navfs.FileEntry{Name: "item.json", Path: path},
+			Line:    12,
+			Snippet: "technoviolet metadata",
+		}},
+	}
+
+	got := m.resultLabel(m.rows[0], TreeRow{})
+	for _, want := range []string{"assets/technoviolet/item.json:12", "technoviolet metadata"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("result label missing %q: %q", want, got)
+		}
 	}
 }
 
