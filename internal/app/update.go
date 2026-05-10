@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	navfs "github.com/heidaraliy/navia/internal/fs"
@@ -146,7 +147,11 @@ func (m Model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.collapseOrParent()
 	case "/":
 		m.mode = ModeFilter
-		m.statusMessage = "Filtering current directory."
+		if m.filter == "" {
+			m.statusMessage = "Type a recursive search query."
+		} else {
+			m.statusMessage = "Editing search query."
+		}
 	case "esc":
 		m.filter = ""
 		m.applyFilter()
@@ -332,6 +337,26 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.mode = ModeNormal
 		m.filter = ""
+	case "up":
+		if m.hasSubmittedSearch() {
+			return m, m.moveSelection(-1)
+		}
+		return m, nil
+	case "down":
+		if m.hasSubmittedSearch() {
+			return m, m.moveSelection(1)
+		}
+		return m, nil
+	case "pgup", "ctrl+u":
+		if m.hasSubmittedSearch() {
+			return m, m.moveSelection(-m.pageStep())
+		}
+		return m, nil
+	case "pgdown", "ctrl+d":
+		if m.hasSubmittedSearch() {
+			return m, m.moveSelection(m.pageStep())
+		}
+		return m, nil
 	case "tab":
 		if m.searchMode == SearchFiles {
 			m.searchMode = SearchText
@@ -342,8 +367,10 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.executedSearchQuery = ""
 	case "enter":
-		if m.filter != m.executedSearchQuery {
-			m.executedSearchQuery = m.filter
+		query := strings.TrimSpace(m.filter)
+		if query != m.executedSearchQuery {
+			m.filter = query
+			m.executedSearchQuery = query
 			return m, m.startSearch()
 		}
 		m.mode = ModeNormal
@@ -355,6 +382,14 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	default:
 		if s := msg.String(); len(s) == 1 {
+			if m.hasSubmittedSearch() {
+				switch s {
+				case "k":
+					return m, m.moveSelection(-1)
+				case "j":
+					return m, m.moveSelection(1)
+				}
+			}
 			m.filter += s
 			m.executedSearchQuery = ""
 		}
