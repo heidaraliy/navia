@@ -1138,6 +1138,65 @@ func TestOpenSelectedInEditorAndTextSearchResult(t *testing.T) {
 	}
 }
 
+func TestNewFromPathOpensFileInEditorFocus(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "alpha.go")
+	writeAppFile(t, file, "package main\n")
+
+	m, err := NewFromPath(file, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.cwd != root {
+		t.Fatalf("cwd = %q, want %q", m.cwd, root)
+	}
+	if m.mode != ModeNormal {
+		t.Fatalf("mode = %v, want normal", m.mode)
+	}
+	if m.focus != FocusEditor {
+		t.Fatalf("focus = %v, want editor", m.focus)
+	}
+	if m.filter != "" || m.executedSearchQuery != "" || m.searchRunning {
+		t.Fatalf("search state = filter %q executed %q running %v", m.filter, m.executedSearchQuery, m.searchRunning)
+	}
+	entry, ok := m.selected()
+	if !ok || entry.Path != file {
+		t.Fatalf("selected = %#v/%v, want %q", entry, ok, file)
+	}
+	if m.preview.Path != file {
+		t.Fatalf("preview path = %q, want %q", m.preview.Path, file)
+	}
+	buf := m.activeBuffer()
+	if buf == nil {
+		t.Fatal("active buffer is nil")
+	}
+	if buf.Path != file {
+		t.Fatalf("buffer path = %q, want %q", buf.Path, file)
+	}
+	if buf.Mode != editor.Normal {
+		t.Fatalf("buffer mode = %v, want normal", buf.Mode)
+	}
+}
+
+func TestNewFromPathKeepsDirectoryStartupInTreeFocus(t *testing.T) {
+	root := t.TempDir()
+	writeAppFile(t, filepath.Join(root, "alpha.go"), "package main\n")
+
+	m, err := NewFromPath(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.cwd != root {
+		t.Fatalf("cwd = %q, want %q", m.cwd, root)
+	}
+	if m.focus != FocusTree {
+		t.Fatalf("focus = %v, want tree", m.focus)
+	}
+	if got := m.activeBuffer(); got != nil {
+		t.Fatalf("active buffer = %#v, want nil", got)
+	}
+}
+
 func TestDefaultNameForCopyUsesNextAvailableSuffix(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "note.txt")
