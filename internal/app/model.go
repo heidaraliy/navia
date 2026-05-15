@@ -176,6 +176,41 @@ func New(start string, cfg config.Config) (Model, error) {
 	return m, nil
 }
 
+func NewFromPath(start string, cfg config.Config) (Model, error) {
+	abs, err := filepath.Abs(start)
+	if err != nil {
+		return Model{}, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return Model{}, err
+	}
+	if info.IsDir() {
+		return New(abs, cfg)
+	}
+	return NewWithFile(abs, cfg)
+}
+
+func NewWithFile(path string, cfg config.Config) (Model, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return Model{}, err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return Model{}, err
+	}
+	if info.IsDir() {
+		return New(abs, cfg)
+	}
+	m, err := New(filepath.Dir(abs), cfg)
+	if err != nil {
+		return Model{}, err
+	}
+	m.StartFile(abs)
+	return m, nil
+}
+
 func NewWithSearch(start string, cfg config.Config, search StartupSearch) (Model, error) {
 	m, err := New(start, cfg)
 	if err != nil {
@@ -215,6 +250,26 @@ func (m *Model) StartSearch(search StartupSearch) {
 	m.applyFilter()
 	m.clampSelection()
 	m.refreshPreview()
+}
+
+func (m *Model) StartFile(path string) {
+	if path == "" {
+		return
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(m.cwd, path)
+	}
+	path = filepath.Clean(path)
+	m.mode = ModeNormal
+	m.filter = ""
+	m.executedSearchQuery = ""
+	m.searchRunning = false
+	m.selectPath(path)
+	m.refreshPreview()
+	_ = m.openEditorTab(path)
+	if buf := m.activeBuffer(); buf != nil {
+		buf.Mode = editor.Normal
+	}
 }
 
 func (m *Model) StartDiff() {
