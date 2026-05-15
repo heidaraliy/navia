@@ -77,7 +77,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case *fileSearch != "":
 		model, err = app.NewWithSearch(abs, cfg, app.StartupSearch{Mode: app.SearchFiles, Query: *fileSearch})
 	default:
-		model, err = app.New(abs, cfg)
+		model, err = app.NewFromPath(abs, cfg)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "navia: %v\n", err)
