@@ -109,6 +109,27 @@ func TestEditorTopLeftShowsBufferModeAndCommand(t *testing.T) {
 	}
 }
 
+func TestEditorTopLeftShowsCommandWhenSearchTabOpen(t *testing.T) {
+	buf := editor.NewScratch("a.go")
+	buf.Mode = editor.Command
+	buf.HandleKey("w")
+	m := Model{
+		focus:               FocusEditor,
+		filter:              "combat",
+		executedSearchQuery: "combat",
+		editorTabs:          []*editor.Buffer{buf},
+	}
+	got := m.topLeft()
+	for _, want := range []string{"EDITOR", "EXEC", ":w"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("topLeft missing %q with search tab open: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "SEARCH") {
+		t.Fatalf("topLeft should show focused editor state, got %q", got)
+	}
+}
+
 func TestEditorTopLeftShowsNormalPendingCommand(t *testing.T) {
 	buf := editor.NewScratch("a.go")
 	buf.HandleKey("d")

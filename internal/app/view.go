@@ -66,7 +66,8 @@ func (m Model) renderTop() string {
 }
 
 func (m Model) topLeft() string {
-	if m.mode == ModeFilter || m.filter != "" {
+	editorFocused := m.focus == FocusEditor && m.activeBuffer() != nil
+	if m.mode == ModeFilter || (m.filter != "" && !editorFocused) {
 		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
 			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
 			" " + m.renderSearchQuery()
@@ -74,7 +75,7 @@ func (m Model) topLeft() string {
 	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
 	}
-	if m.focus == FocusEditor {
+	if editorFocused {
 		if buf := m.activeBuffer(); buf != nil {
 			mode := editorModeLabel(buf)
 			line := m.topTag("EDITOR", lipgloss.Color("39"), lipgloss.Color("230")) +
