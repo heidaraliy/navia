@@ -372,7 +372,7 @@ func TestDiffHelpersAndGitActions(t *testing.T) {
 	if m.diffSelectedIndex != len(m.diffChanges)-1 {
 		t.Fatalf("high diff index = %d", m.diffSelectedIndex)
 	}
-	if got := diffPreviewContent(root, nil, 0, 1024); got != "No modified or untracked files." {
+	if got := diffPreviewContent(root, nil, 0, 1024, nil); got != "No modified or untracked files." {
 		t.Fatalf("empty diff preview = %q", got)
 	}
 
@@ -419,6 +419,47 @@ func TestDiffHelpersAndGitActions(t *testing.T) {
 	}
 	if got := selectDiffIndex([]git.Change{{Path: "a"}}, "", 5); got != 0 {
 		t.Fatalf("selectDiffIndex high fallback = %d", got)
+	}
+}
+
+func TestPatchReviewModeIsReadOnly(t *testing.T) {
+	root := t.TempDir()
+	patch := []byte(strings.Join([]string{
+		"diff --git a/a.txt b/a.txt",
+		"index 1111111..2222222 100644",
+		"--- a/a.txt",
+		"+++ b/a.txt",
+		"@@ -1 +1 @@",
+		"-old",
+		"+new",
+		"",
+	}, "\n"))
+
+	m, err := NewWithPatchReview(root, config.Default(), StartupPatchReview{Label: "PR #12", Data: patch})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.mode != ModeDiff || m.diffPatchReview == nil || len(m.diffChanges) != 1 {
+		t.Fatalf("patch startup = mode %v review %v changes %#v", m.mode, m.diffPatchReview != nil, m.diffChanges)
+	}
+	if got := m.diffViewport.View(); !strings.Contains(got, "+new") || !strings.Contains(got, "-old") {
+		t.Fatalf("patch preview missing lines:\n%s", got)
+	}
+	if got := m.topLeft(); !strings.Contains(got, "PATCH") {
+		t.Fatalf("top left = %q", got)
+	}
+	if got := m.topContext(); !strings.Contains(got, "PR #12") || !strings.Contains(got, "Lines +1") {
+		t.Fatalf("top context = %q", got)
+	}
+	updated, _ := m.updateDiff(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	got := updated.(Model)
+	if got.mode != ModeDiff || !strings.Contains(got.statusMessage, "read-only") {
+		t.Fatalf("stage in patch mode = mode %v status %q", got.mode, got.statusMessage)
+	}
+	updated, _ = got.updateDiff(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	got = updated.(Model)
+	if !strings.Contains(got.statusMessage, "already loaded") {
+		t.Fatalf("refresh in patch mode status = %q", got.statusMessage)
 	}
 }
 
