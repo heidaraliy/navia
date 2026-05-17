@@ -46,6 +46,11 @@ type StartupSearch struct {
 	Query string
 }
 
+type StartupPatchReview struct {
+	Label string
+	Data  []byte
+}
+
 type FocusPane int
 
 const (
@@ -117,6 +122,8 @@ type Model struct {
 	diffViewport         viewport.Model
 	diffChanges          []git.Change
 	diffSummary          git.Summary
+	diffPatchReview      *git.PatchReview
+	diffPatchLabel       string
 	diffSelectedIndex    int
 	diffRefreshSignature string
 	diffPreviewRequestID int
@@ -229,6 +236,17 @@ func NewWithDiff(start string, cfg config.Config) (Model, error) {
 	return m, nil
 }
 
+func NewWithPatchReview(start string, cfg config.Config, patch StartupPatchReview) (Model, error) {
+	m, err := New(start, cfg)
+	if err != nil {
+		return Model{}, err
+	}
+	if err := m.StartPatchReview(patch); err != nil {
+		return Model{}, err
+	}
+	return m, nil
+}
+
 func (m Model) Init() tea.Cmd {
 	return autoRefreshCmd()
 }
@@ -274,6 +292,27 @@ func (m *Model) StartFile(path string) {
 
 func (m *Model) StartDiff() {
 	m.enterDiffMode()
+}
+
+func (m *Model) StartPatchReview(patch StartupPatchReview) error {
+	review, err := git.ParsePatchReview(patch.Data)
+	if err != nil {
+		return err
+	}
+	m.mode = ModeDiff
+	m.focus = FocusTree
+	m.diffPatchReview = &review
+	m.diffPatchLabel = strings.TrimSpace(patch.Label)
+	if m.diffPatchLabel == "" {
+		m.diffPatchLabel = "Patch review"
+	}
+	m.diffChanges = review.Changes
+	m.diffSummary = review.Summary
+	m.diffSelectedIndex = 0
+	m.statusMessage = "Patch review."
+	m.clampDiffSelection()
+	m.refreshDiffPreview()
+	return nil
 }
 
 func (m *Model) refresh() error {
