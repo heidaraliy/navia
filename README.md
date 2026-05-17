@@ -166,6 +166,12 @@ Launch directly into diff mode:
 navia -d
 ```
 
+Review a patch without checking out another worktree:
+
+```bash
+gh pr diff 123 --patch | navia --patch - --patch-label "PR #123"
+```
+
 ### Safe File Operations
 
 Navia supports create, rename, copy, cut, paste, and delete.
@@ -260,6 +266,7 @@ go build ./cmd/navia
 navia
 navia /path/to/project
 navia -d
+gh pr diff 123 --patch | navia --patch - --patch-label "PR #123"
 navia -s "search text"
 navia -f "file name"
 navia --version
@@ -270,6 +277,9 @@ navia --version
 | `navia` | Open the current directory. |
 | `navia /path/to/project` | Open a specific directory. |
 | `navia -d` | Start in git diff mode. |
+| `navia --patch file.diff` | Start in read-only patch review mode. |
+| `navia --patch -` | Read a patch from stdin and review it. |
+| `navia --patch - --patch-label "PR #123"` | Give a streamed patch a display label. |
 | `navia -s "query"` | Start in recursive text search. |
 | `navia -f "query"` | Start in recursive file-name search. |
 | `navia --version` | Print the installed version. |
@@ -311,6 +321,9 @@ Press `?` inside Navia for the full in-app key reference.
 | `c` / `p` | Commit or push the current branch. |
 | `r` | Refresh manually. |
 | `esc` | Return to the tree. |
+
+Patch review mode uses the same navigation and diff preview surface, but it is
+read-only because it is reviewing a patch stream instead of a working tree.
 
 </details>
 

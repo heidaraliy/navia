@@ -18,6 +18,8 @@ type diffPreviewLoadedMsg struct {
 }
 
 func (m *Model) enterDiffMode() {
+	m.diffPatchReview = nil
+	m.diffPatchLabel = ""
 	if m.gitRoot == "" {
 		m.statusMessage = "Diff mode requires a git repository."
 		return
@@ -29,6 +31,13 @@ func (m *Model) enterDiffMode() {
 }
 
 func (m *Model) refreshDiff() {
+	if m.diffPatchReview != nil {
+		m.diffChanges = m.diffPatchReview.Changes
+		m.diffSummary = m.diffPatchReview.Summary
+		m.clampDiffSelection()
+		m.refreshDiffPreview()
+		return
+	}
 	if m.gitRoot == "" {
 		m.diffChanges = nil
 		m.diffSummary = git.Summary{}
@@ -68,7 +77,7 @@ func (m *Model) selectedDiffChange() (git.Change, bool) {
 }
 
 func (m *Model) refreshDiffPreview() {
-	content := diffPreviewContent(m.gitRoot, m.diffChanges, m.diffSelectedIndex, int(m.cfg.PreviewMaxBytes))
+	content := m.diffPreviewContent(m.diffChanges, m.diffSelectedIndex, int(m.cfg.PreviewMaxBytes))
 	m.diffViewport.SetContent(content)
 	m.diffRefreshSignature = diffRefreshSignature(m.diffChanges, m.diffSummary, m.diffSelectedIndex, content)
 	m.diffViewport.GotoTop()
@@ -87,10 +96,11 @@ func (m Model) diffPreviewCmd(id int, selected int) tea.Cmd {
 	root := m.gitRoot
 	changes := append([]git.Change(nil), m.diffChanges...)
 	summary := m.diffSummary
+	review := m.diffPatchReview
 	maxBytes := int(m.cfg.PreviewMaxBytes)
 	return func() tea.Msg {
 		start := perfNow()
-		content := diffPreviewContent(root, changes, selected, maxBytes)
+		content := diffPreviewContent(root, changes, selected, maxBytes, review)
 		signature := diffRefreshSignature(changes, summary, selected, content)
 		perfLogDuration("diff.preview", start, "root", root)
 		return diffPreviewLoadedMsg{id: id, selectedIndex: selected, content: content, signature: signature}
@@ -106,13 +116,31 @@ func (m *Model) applyDiffPreviewLoaded(msg diffPreviewLoadedMsg) {
 	m.diffViewport.GotoTop()
 }
 
-func diffPreviewContent(gitRoot string, changes []git.Change, selectedIndex int, maxBytes int) string {
+func (m Model) diffPreviewContent(changes []git.Change, selectedIndex int, maxBytes int) string {
+	return diffPreviewContent(m.gitRoot, changes, selectedIndex, maxBytes, m.diffPatchReview)
+}
+
+func diffPreviewContent(gitRoot string, changes []git.Change, selectedIndex int, maxBytes int, review *git.PatchReview) string {
 	if len(changes) == 0 || selectedIndex < 0 || selectedIndex >= len(changes) {
 		return "No modified or untracked files."
+	}
+	if review != nil {
+		return patchPreviewContent(review, changes[selectedIndex], maxBytes)
 	}
 	diff, err := git.Diff(gitRoot, changes[selectedIndex], maxBytes)
 	if err != nil {
 		return err.Error()
+	}
+	return formatUnifiedDiff(diff)
+}
+
+func patchPreviewContent(review *git.PatchReview, change git.Change, maxBytes int) string {
+	diff := review.Patches[change.Path]
+	if diff == "" {
+		return "No patch for " + change.Path + "."
+	}
+	if maxBytes > 0 && len(diff) > maxBytes {
+		diff = diff[:maxBytes] + "\n... truncated ...\n"
 	}
 	return formatUnifiedDiff(diff)
 }
@@ -145,27 +173,55 @@ func (m Model) updateDiff(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G":
 		m.diffViewport.GotoBottom()
 	case "r":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is already loaded."
+			return m, nil
+		}
 		m.refreshDiff()
 		m.statusMessage = "Diff refreshed."
 	case "s":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		m.stageSelectedDiff()
 	case "u":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		m.unstageSelectedDiff()
 	case "R":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		if change, ok := m.selectedDiffChange(); ok {
 			m.pendingDiffAction = change
 			m.mode = ModeDiffConfirmRestore
 			m.statusMessage = "Restore file changes? Press y to discard, Esc to cancel."
 		}
 	case "D":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		if change, ok := m.selectedDiffChange(); ok {
 			m.pendingDiffAction = change
 			m.mode = ModeDiffConfirmRemove
 			m.statusMessage = "Remove file? Press y to delete, Esc to cancel."
 		}
 	case "c":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		m.enterMode(ModeDiffCommit, "commit> ", "")
 	case "p":
+		if m.diffPatchReview != nil {
+			m.statusMessage = "Patch review is read-only."
+			return m, nil
+		}
 		if err := git.Push(m.gitRoot); err != nil {
 			m.setError(err)
 		} else {

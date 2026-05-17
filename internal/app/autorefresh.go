@@ -139,7 +139,7 @@ func writeTreeSignatureEntry(b *strings.Builder, path string, info os.FileInfo) 
 }
 
 func (m Model) autoRefreshDiffCmd() tea.Cmd {
-	if m.gitRoot == "" {
+	if m.gitRoot == "" || m.diffPatchReview != nil {
 		return nil
 	}
 	return func() tea.Msg {
@@ -153,7 +153,7 @@ func (m Model) autoRefreshDiffCmd() tea.Cmd {
 			selectedPath = change.Path
 		}
 		selectedIndex := selectDiffIndex(changes, selectedPath, m.diffSelectedIndex)
-		content := diffPreviewContent(m.gitRoot, changes, selectedIndex, int(m.cfg.PreviewMaxBytes))
+		content := diffPreviewContent(m.gitRoot, changes, selectedIndex, int(m.cfg.PreviewMaxBytes), nil)
 		next := diffRefreshSignature(changes, summary, selectedIndex, content)
 		perfLogDuration("autorefresh.diff", start, "root", m.gitRoot)
 		if next == m.diffRefreshSignature {
@@ -180,7 +180,7 @@ func (m Model) handleDiffRefresh(msg diffRefreshMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) autoRefreshDiff() {
-	if m.gitRoot == "" {
+	if m.gitRoot == "" || m.diffPatchReview != nil {
 		return
 	}
 	changes, summary, err := git.Status(m.gitRoot)
@@ -193,7 +193,7 @@ func (m *Model) autoRefreshDiff() {
 		selectedPath = change.Path
 	}
 	selectedIndex := selectDiffIndex(changes, selectedPath, m.diffSelectedIndex)
-	content := diffPreviewContent(m.gitRoot, changes, selectedIndex, int(m.cfg.PreviewMaxBytes))
+	content := diffPreviewContent(m.gitRoot, changes, selectedIndex, int(m.cfg.PreviewMaxBytes), nil)
 	next := diffRefreshSignature(changes, summary, selectedIndex, content)
 	if next == m.diffRefreshSignature {
 		return

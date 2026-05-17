@@ -73,6 +73,9 @@ func (m Model) topLeft() string {
 			" " + m.renderSearchQuery()
 	}
 	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		if m.diffPatchReview != nil {
+			return m.topTag("PATCH", lipgloss.Color("125"), lipgloss.Color("230"))
+		}
 		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
 	}
 	if editorFocused {
@@ -196,6 +199,9 @@ func (m Model) topContext() string {
 		context = "/ refines search  esc clears results"
 	} else if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
 		context = diffSummaryText(m.diffSummary)
+		if m.diffPatchReview != nil {
+			context = displayText(m.diffPatchLabel) + "  " + context
+		}
 	} else if buf := m.activeBuffer(); buf != nil {
 		context = tabLabel(buf) + "  " + displayText(statusPath(buf.Path))
 	}
@@ -737,6 +743,15 @@ func (m Model) footerKeyStyle(hint footerHint) lipgloss.Style {
 
 func (m Model) footerHints() []footerHint {
 	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
+		if m.diffPatchReview != nil {
+			return []footerHint{
+				{"q", "quit"},
+				{"Esc", "tree"},
+				{"?", "help"},
+				{"ctrl+u / ctrl+d", "scroll"},
+				{"r", "loaded"},
+			}
+		}
 		return []footerHint{
 			{"Esc", "tree"},
 			{"s", "stage"},
