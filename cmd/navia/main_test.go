@@ -75,6 +75,16 @@ func TestRunRejectsConflictingStartupModes(t *testing.T) {
 	if !strings.Contains(stderr.String(), "one startup mode") {
 		t.Fatalf("stderr = %q", stderr.String())
 	}
+
+	stdout.Reset()
+	stderr.Reset()
+	code = run([]string{"--patch", "-", "-f", "file"}, &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("patch conflict code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "one startup mode") {
+		t.Fatalf("patch conflict stderr = %q", stderr.String())
+	}
 }
 
 func TestRunRejectsBadFlags(t *testing.T) {
@@ -111,6 +121,42 @@ func TestRunStartsProgramWithSearchModesAndConfigWarning(t *testing.T) {
 		if !called {
 			t.Fatalf("run(%v) did not start program", args)
 		}
+	}
+}
+
+func TestRunStartsProgramWithPatchReview(t *testing.T) {
+	dir := t.TempDir()
+	oldNewProgram := newProgram
+	oldStdin := stdin
+	defer func() {
+		newProgram = oldNewProgram
+		stdin = oldStdin
+	}()
+
+	patch := strings.Join([]string{
+		"diff --git a/a.txt b/a.txt",
+		"index 1111111..2222222 100644",
+		"--- a/a.txt",
+		"+++ b/a.txt",
+		"@@ -1 +1 @@",
+		"-old",
+		"+new",
+		"",
+	}, "\n")
+	stdin = strings.NewReader(patch)
+	called := false
+	newProgram = func(model app.Model) programRunner {
+		called = true
+		return fakeProgram{}
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"--patch", "-", "--patch-label", "PR #7", dir}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code = %d, stderr=%q", code, stderr.String())
+	}
+	if !called {
+		t.Fatal("patch review did not start program")
 	}
 }
 
