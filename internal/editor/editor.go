@@ -346,6 +346,10 @@ func (b *Buffer) handleNormal(key string) Action {
 		repeat(count, b.moveUp)
 	case "l", "right":
 		repeat(count, b.moveRight)
+	case "alt+left":
+		repeat(count, b.wordLeft)
+	case "alt+right":
+		repeat(count, b.wordRight)
 	case "ctrl+d":
 		b.pageDown(10)
 	case "ctrl+u":
@@ -467,6 +471,10 @@ func (b *Buffer) handleInsert(key string) Action {
 		b.moveLeft()
 	case "right":
 		b.moveRightInsert()
+	case "alt+left":
+		b.wordLeft()
+	case "alt+right":
+		b.wordRight()
 	case "up":
 		b.moveUp()
 	case "down":
@@ -501,6 +509,10 @@ func (b *Buffer) handleVisual(key string) Action {
 		b.moveUp()
 	case "l", "right":
 		b.moveRight()
+	case "alt+left":
+		b.wordLeft()
+	case "alt+right":
+		b.wordRight()
 	case "ctrl+d":
 		b.pageDown(10)
 	case "ctrl+u":
@@ -764,11 +776,13 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 	out := make([]string, 0, height)
 	for i := start; i < len(b.Lines) && len(out) < height; i++ {
 		prefix := fmt.Sprintf("%*d ", gutterW, i+1)
-		lineText, col := visibleLineWindow(b.Lines[i], -1, width, height)
-		line := renderVisibleLine(b.Path, lineText, col, false, highlight)
+		window := visibleLineWindowInfo(b.Lines[i], -1, width, height)
+		selStart, selEnd, selected := b.selectedWindowRange(i, window)
+		line := renderVisibleLine(b.Path, window.line, window.col, false, highlight, selStart, selEnd, selected)
 		if i == b.Row {
-			lineText, col = visibleLineWindow(b.Lines[i], b.Col, width, height)
-			line = renderVisibleLine(b.Path, lineText, col, b.Mode == Insert, highlight)
+			window = visibleLineWindowInfo(b.Lines[i], b.Col, width, height)
+			selStart, selEnd, selected = b.selectedWindowRange(i, window)
+			line = renderVisibleLine(b.Path, window.line, window.col, b.Mode == Insert, highlight, selStart, selEnd, selected)
 		}
 		wrapped := wrapDisplayLimit(prefix+line, strings.Repeat(" ", gutterW+1), width, height-len(out))
 		for _, visual := range wrapped {
@@ -784,14 +798,22 @@ func (b *Buffer) visible(width, height int, highlight func(path, line string) st
 	return out
 }
 
-func renderVisibleLine(path, line string, col int, insert bool, highlight func(path, line string) string) string {
+func renderVisibleLine(path, line string, col int, insert bool, highlight func(path, line string) string, selectionStart, selectionEnd int, selected bool) string {
 	if highlight == nil {
-		return renderLine(line, col, insert)
+		return renderLineSelected(line, col, insert, selectionStart, selectionEnd, selected)
 	}
-	return renderHighlightedLine(highlight(path, line), col, insert)
+	return renderHighlightedLineSelected(highlight(path, line), col, insert, selectionStart, selectionEnd, selected)
 }
 
-func visibleLineWindow(line string, col, width, height int) (string, int) {
+type visibleWindow struct {
+	line        string
+	col         int
+	sourceStart int
+	sourceEnd   int
+	prefixLen   int
+}
+
+func visibleLineWindowInfo(line string, col, width, height int) visibleWindow {
 	budget := width * max(1, height)
 	if budget < 400 {
 		budget = 400
@@ -801,10 +823,10 @@ func visibleLineWindow(line string, col, width, height int) (string, int) {
 	}
 	end, truncated := byteAfterRunes(line, budget)
 	if !truncated {
-		return line, col
+		return visibleWindow{line: line, col: col, sourceStart: 0, sourceEnd: len(line)}
 	}
 	if col < 0 {
-		return line[:end] + " ...", col
+		return visibleWindow{line: line[:end] + " ...", col: col, sourceStart: 0, sourceEnd: end}
 	}
 	if col > len(line) {
 		col = len(line)
@@ -820,7 +842,18 @@ func visibleLineWindow(line string, col, width, height int) (string, int) {
 	if end < len(line) {
 		suffix = " ..."
 	}
-	return prefix + line[start:end] + suffix, col - start + len(prefix)
+	return visibleWindow{
+		line:        prefix + line[start:end] + suffix,
+		col:         col - start + len(prefix),
+		sourceStart: start,
+		sourceEnd:   end,
+		prefixLen:   len(prefix),
+	}
+}
+
+func visibleLineWindow(line string, col, width, height int) (string, int) {
+	window := visibleLineWindowInfo(line, col, width, height)
+	return window.line, window.col
 }
 
 func byteAfterRunes(s string, maxRunes int) (int, bool) {
@@ -1272,50 +1305,93 @@ func (b *Buffer) selectionText() string {
 	if b.visualRow < 0 {
 		return ""
 	}
-	a, c := b.visualRow, b.Row
-	if a > c {
-		a, c = c, a
-	}
+	startRow, startCol, endRow, endCol := b.selectionRange()
 	if b.Mode == VisualLine {
-		return strings.Join(b.Lines[a:c+1], "\n") + "\n"
+		return strings.Join(b.Lines[startRow:endRow+1], "\n") + "\n"
 	}
-	if b.visualRow != b.Row {
-		return strings.Join(b.Lines[a:c+1], "\n")
+	if startRow != endRow {
+		parts := []string{b.Lines[startRow][startCol:]}
+		for row := startRow + 1; row < endRow; row++ {
+			parts = append(parts, b.Lines[row])
+		}
+		parts = append(parts, b.Lines[endRow][:endCol])
+		return strings.Join(parts, "\n")
 	}
-	start, end := b.visualCol, b.Col
-	if start > end {
-		start, end = end, start
-	}
-	line := b.Lines[b.Row]
-	end = min(end+1, len(line))
-	return line[start:end]
+	return b.Lines[startRow][startCol:endCol]
 }
 
 func (b *Buffer) deleteSelection() {
 	if b.visualRow < 0 {
 		return
 	}
-	a, c := b.visualRow, b.Row
-	if a > c {
-		a, c = c, a
-	}
-	if b.Mode == VisualLine || b.visualRow != b.Row {
-		b.Lines = append(b.Lines[:a], b.Lines[c+1:]...)
+	startRow, startCol, endRow, endCol := b.selectionRange()
+	if b.Mode == VisualLine {
+		b.Lines = append(b.Lines[:startRow], b.Lines[endRow+1:]...)
 		if len(b.Lines) == 0 {
 			b.Lines = []string{""}
 		}
-		b.Row = min(a, len(b.Lines)-1)
+		b.Row = min(startRow, len(b.Lines)-1)
 		b.Col = 0
 		return
 	}
-	start, end := b.visualCol, b.Col
-	if start > end {
-		start, end = end, start
+	if startRow == endRow {
+		line := b.Lines[startRow]
+		b.Lines[startRow] = line[:startCol] + line[endCol:]
+		b.Row = startRow
+		b.Col = startCol
+		return
 	}
-	line := b.Lines[b.Row]
-	end = min(end+1, len(line))
-	b.Lines[b.Row] = line[:start] + line[end:]
-	b.Col = start
+	first := b.Lines[startRow][:startCol]
+	last := b.Lines[endRow][endCol:]
+	b.Lines = append(b.Lines[:startRow], append([]string{first + last}, b.Lines[endRow+1:]...)...)
+	b.Row = startRow
+	b.Col = startCol
+}
+
+func (b *Buffer) selectionRange() (int, int, int, int) {
+	if b.visualRow < 0 {
+		return b.Row, b.Col, b.Row, b.Col
+	}
+	startRow, startCol := b.visualRow, b.visualCol
+	endRow, endCol := b.Row, b.Col
+	if startRow > endRow || (startRow == endRow && startCol > endCol) {
+		startRow, endRow = endRow, startRow
+		startCol, endCol = endCol, startCol
+	}
+	startCol = min(max(0, startCol), len(b.Lines[startRow]))
+	endCol = min(max(0, endCol)+1, len(b.Lines[endRow]))
+	return startRow, startCol, endRow, endCol
+}
+
+func (b *Buffer) selectedWindowRange(row int, window visibleWindow) (int, int, bool) {
+	if b.Mode != Visual && b.Mode != VisualLine || b.visualRow < 0 {
+		return 0, 0, false
+	}
+	startRow, startCol, endRow, endCol := b.selectionRange()
+	if row < startRow || row > endRow {
+		return 0, 0, false
+	}
+	if b.Mode == VisualLine {
+		startCol = 0
+		endCol = len(b.Lines[row])
+	} else {
+		switch {
+		case row == startRow && row == endRow:
+		case row == startRow:
+			endCol = len(b.Lines[row])
+		case row == endRow:
+			startCol = 0
+		default:
+			startCol = 0
+			endCol = len(b.Lines[row])
+		}
+	}
+	start := max(startCol, window.sourceStart)
+	end := min(endCol, window.sourceEnd)
+	if start >= end {
+		return 0, 0, false
+	}
+	return start - window.sourceStart + window.prefixLen, end - window.sourceStart + window.prefixLen, true
 }
 
 func (b *Buffer) findNext(dir int) {
@@ -1580,6 +1656,29 @@ func (b *Buffer) wordAtCursor() string {
 	return line[start:end]
 }
 
+func (b *Buffer) SymbolAtCursor() string {
+	line := b.Lines[b.Row]
+	if line == "" {
+		return ""
+	}
+	start := min(b.Col, max(0, len(line)-1))
+	for start > 0 && isSymbolRune(rune(line[start-1])) {
+		start--
+	}
+	end := min(b.Col, max(0, len(line)-1))
+	for end < len(line) && isSymbolRune(rune(line[end])) {
+		end++
+	}
+	if start == end {
+		return ""
+	}
+	return line[start:end]
+}
+
+func isSymbolRune(r rune) bool {
+	return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
 func (b *Buffer) clamp() {
 	b.Row = min(max(0, b.Row), len(b.Lines)-1)
 	if len(b.Lines[b.Row]) == 0 {
@@ -1629,50 +1728,27 @@ func isNumber(s string) bool {
 }
 
 func renderLine(s string, col int, insert bool) string {
+	return renderLineSelected(s, col, insert, 0, 0, false)
+}
+
+func renderLineSelected(s string, col int, insert bool, selectionStart, selectionEnd int, selected bool) string {
 	s = textsafe.Content(s)
-	var out strings.Builder
-	displayCol := 0
-	cursorDrawn := false
-	for i, r := range s {
-		if i == col {
-			cursorDrawn = true
-			if r == '\t' {
-				spaces := tabWidth(displayCol)
-				writeCursorRune(&out, ' ')
-				if spaces > 1 {
-					out.WriteString(strings.Repeat(" ", spaces-1))
-				}
-				displayCol += spaces
-				continue
-			}
-			writeCursorRune(&out, r)
-			displayCol++
-			continue
-		}
-		if r == '\t' {
-			spaces := tabWidth(displayCol)
-			out.WriteString(strings.Repeat(" ", spaces))
-			displayCol += spaces
-			continue
-		}
-		out.WriteRune(r)
-		displayCol++
+	if !selected {
+		selectionStart, selectionEnd = 0, 0
 	}
-	if col >= len(s) || (insert && col == len(s)) {
-		cursorDrawn = true
-		out.WriteRune('█')
-	}
-	if col >= 0 && !cursorDrawn {
-		out.WriteRune('█')
-	}
-	return out.String()
+	return renderHighlightedLineSelected(s, col, insert, selectionStart, selectionEnd, selected)
 }
 
 func renderHighlightedLine(s string, col int, insert bool) string {
+	return renderHighlightedLineSelected(s, col, insert, 0, 0, false)
+}
+
+func renderHighlightedLineSelected(s string, col int, insert bool, selectionStart, selectionEnd int, selected bool) string {
 	var out strings.Builder
 	displayCol := 0
 	sourceByte := 0
 	cursorDrawn := false
+	selectionOpen := false
 	for i := 0; i < len(s); {
 		if strings.HasPrefix(s[i:], "\x1b[") {
 			end := i + 2
@@ -1683,12 +1759,23 @@ func renderHighlightedLine(s string, col int, insert bool) string {
 				end++
 			}
 			out.WriteString(s[i:end])
+			if selectionOpen {
+				out.WriteString("\x1b[48;5;24m")
+			}
 			i = end
 			continue
 		}
 		r, size := rune(s[i]), 1
 		if r >= utf8.RuneSelf {
 			r, size = utf8.DecodeRuneInString(s[i:])
+		}
+		if selected && !selectionOpen && sourceByte >= selectionStart && sourceByte < selectionEnd {
+			out.WriteString("\x1b[48;5;24m")
+			selectionOpen = true
+		}
+		if selected && selectionOpen && sourceByte >= selectionEnd {
+			out.WriteString("\x1b[49m")
+			selectionOpen = false
 		}
 		if sourceByte == col {
 			cursorDrawn = true
@@ -1699,10 +1786,12 @@ func renderHighlightedLine(s string, col int, insert bool) string {
 					out.WriteString(strings.Repeat(" ", spaces-1))
 				}
 				displayCol += spaces
-			} else {
-				writeCursorRune(&out, r)
-				displayCol++
+				sourceByte += size
+				i += size
+				continue
 			}
+			writeCursorRune(&out, r)
+			displayCol++
 			sourceByte += size
 			i += size
 			continue
@@ -1719,6 +1808,9 @@ func renderHighlightedLine(s string, col int, insert bool) string {
 		displayCol++
 		sourceByte += size
 		i += size
+	}
+	if selected && selectionOpen {
+		out.WriteString("\x1b[49m")
 	}
 	if col >= sourceByte || (insert && col == sourceByte) {
 		cursorDrawn = true

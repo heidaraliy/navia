@@ -302,7 +302,7 @@ func TestNormalInsertAndVisualMotions(t *testing.T) {
 	b.HandleKey("v")
 	b.HandleKey("k")
 	b.HandleKey("y")
-	if b.Register != "efgh\nijkl" {
+	if b.Register != "fgh\nij" {
 		t.Fatalf("multi visual yank = %q", b.Register)
 	}
 	b.Row, b.Col = 2, 0
@@ -608,6 +608,10 @@ func TestVisibilityWrappingAndAccessors(t *testing.T) {
 	if got := renderHighlightedLine("\x1b[31mword\x1b[0m", 1, false); got != "\x1b[31mw\x1b[7mo\x1b[27mrd\x1b[0m" {
 		t.Fatalf("renderHighlightedLine cursor style = %q", got)
 	}
+	selected := renderHighlightedLineSelected("\x1b[31mword\x1b[0m", -1, false, 1, 3, true)
+	if !strings.Contains(selected, "\x1b[31m") || !strings.Contains(selected, "\x1b[48;5;24m") || !strings.Contains(selected, "\x1b[49m") {
+		t.Fatalf("selected highlight did not preserve foreground/background = %q", selected)
+	}
 	if got := tabWidth(5); got != 3 {
 		t.Fatalf("tabWidth = %d", got)
 	}
@@ -907,5 +911,46 @@ func TestRemainingSmallBranchEdges(t *testing.T) {
 	b.clamp()
 	if b.Col != len("word")-1 {
 		t.Fatalf("clamp col = %d", b.Col)
+	}
+}
+
+func TestVisualSelectionRenderingAndAltWordMotions(t *testing.T) {
+	b := NewScratch("x.ts")
+	b.Lines = []string{"const alpha = beta", "gamma delta"}
+	b.Row, b.Col = 0, 6
+	b.HandleKey("v")
+	b.HandleKey("alt+right")
+	if b.Col != 12 {
+		t.Fatalf("visual alt-right col = %d", b.Col)
+	}
+	lines := b.VisibleHighlighted(40, 3, func(path, line string) string {
+		return "\x1b[32m" + line + "\x1b[0m"
+	})
+	if !strings.Contains(lines[0], "\x1b[48;5;24m") || !strings.Contains(lines[0], "\x1b[32m") {
+		t.Fatalf("visual render missing selection/color = %#v", lines)
+	}
+
+	b.HandleKey("y")
+	if b.Register != "alpha =" {
+		t.Fatalf("visual selected text = %q", b.Register)
+	}
+	b.Mode = Insert
+	b.Row, b.Col = 0, len(b.Lines[0])
+	b.HandleKey("alt+left")
+	if b.Col != 14 {
+		t.Fatalf("insert alt-left col = %d", b.Col)
+	}
+	b.Col = 0
+	b.HandleKey("alt+right")
+	if b.Col != 6 {
+		t.Fatalf("insert alt-right col = %d", b.Col)
+	}
+
+	b.Row, b.Col = 1, 2
+	b.Mode = Normal
+	b.HandleKey("V")
+	lineSelection := b.Visible(40, 3)
+	if !strings.Contains(lineSelection[1], "\x1b[48;5;24m") {
+		t.Fatalf("visual-line render missing selection = %#v", lineSelection)
 	}
 }
