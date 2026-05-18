@@ -83,6 +83,8 @@ type ResultRow struct {
 	Entry   navfs.FileEntry
 	Depth   int
 	Line    int
+	Column  int
+	Score   int
 	Snippet string
 }
 
