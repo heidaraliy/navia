@@ -280,7 +280,11 @@ func (m *Model) openSelected() {
 		_ = m.openEditorTab(entry.Path)
 		if buf := m.activeBuffer(); buf != nil {
 			buf.Row = row.Line - 1
-			buf.Col = 0
+			if row.Column > 0 {
+				buf.Col = row.Column - 1
+			} else {
+				buf.Col = 0
+			}
 		}
 		return
 	}
@@ -362,6 +366,17 @@ func (m *Model) drillIntoSelectedRoot() {
 }
 
 func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	keyMsg := tea.Key(msg)
+	if keyMsg.Type == tea.KeyRunes && (keyMsg.Paste || len(keyMsg.Runes) > 1) {
+		if pasted := flattenSearchPaste(string(keyMsg.Runes)); pasted != "" {
+			m.filter += pasted
+			m.executedSearchQuery = ""
+		}
+		m.selectedIndex = 0
+		m.applyFilter()
+		m.clampSelection()
+		return m, m.queuePreview()
+	}
 	switch msg.String() {
 	case "esc":
 		m.mode = ModeNormal
@@ -430,6 +445,10 @@ func (m Model) updateFilter(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.applyFilter()
 	m.clampSelection()
 	return m, m.queuePreview()
+}
+
+func flattenSearchPaste(value string) string {
+	return strings.Join(strings.Fields(value), " ")
 }
 
 func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

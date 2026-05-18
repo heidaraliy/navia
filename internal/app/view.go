@@ -859,6 +859,7 @@ func helpContent() string {
 		}),
 		helpSection("Search", [][2]string{
 			{"tab", "toggle file/text search"},
+			{"paste", "append flattened query text"},
 			{"enter", "run search"},
 			{"arrows/jk", "move submitted results"},
 			{"enter/l", "open submitted result"},
@@ -867,6 +868,7 @@ func helpContent() string {
 		helpSection("Editor Normal", [][2]string{
 			{"i/a/I/A/o/O", "enter insert"},
 			{"h/j/k/l, w/b/e", "move cursor"},
+			{"alt-left/right", "move by word"},
 			{"gg/G, :number", "jump"},
 			{"space", "toggle Markdown task checkbox"},
 			{"u / ctrl+r", "undo / redo"},
@@ -875,6 +877,7 @@ func helpContent() string {
 		helpSection("Editor Insert/Visual", [][2]string{
 			{"esc", "return to normal"},
 			{"v / V", "visual / visual line"},
+			{"alt-left/right", "move by word"},
 			{"y / d / p", "yank / delete / paste"},
 		}),
 		helpSection("Editor Tabs", [][2]string{

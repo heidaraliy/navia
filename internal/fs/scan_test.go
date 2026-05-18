@@ -182,6 +182,45 @@ func TestRecursiveSearchFilesAndText(t *testing.T) {
 	}
 }
 
+func TestSymbolSearchDefinitionsAndReferences(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.go":     "package main\nfunc StartServer() {}\nfunc (m Model) Render() {}\n",
+		"ui.ts":       "export function StartServer() {}\nconst Render = () => null\n",
+		"system.cpp":  "class StartServer {};\nvoid World::Render() {\n}\n",
+		"script.lua":  "local function StartServer()\nend\nthing = function()\nend\n",
+		"readme.txt":  "StartServer mention\nNotStartServer nope\n",
+		"ignored.bin": "StartServer\x00hidden\n",
+	}
+	for name, content := range files {
+		must(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644))
+	}
+
+	defs, err := SearchSymbolDefinitions(dir, "StartServer", 2048, ScanOptions{ShowHidden: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 4 {
+		t.Fatalf("definition matches = %#v", defs)
+	}
+	if defs[0].Score < defs[len(defs)-1].Score || defs[0].Column == 0 {
+		t.Fatalf("definition ranking/column = %#v", defs)
+	}
+
+	refs, err := SearchSymbolReferences(dir, "StartServer", 2048, ScanOptions{ShowHidden: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range refs {
+		if strings.Contains(ref.Entry.Name, "ignored") || strings.Contains(ref.Snippet, "NotStartServer") {
+			t.Fatalf("bad reference match = %#v", ref)
+		}
+	}
+	if len(refs) != 5 {
+		t.Fatalf("reference matches = %#v", refs)
+	}
+}
+
 func TestRecursiveSearchFilesMatchesPathTokens(t *testing.T) {
 	dir := t.TempDir()
 	wanted := filepath.Join(dir, "assets", "technoviolet", "item.json")

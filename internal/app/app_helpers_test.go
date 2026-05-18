@@ -650,13 +650,13 @@ func TestApplyEditorActionVariants(t *testing.T) {
 		t.Fatalf("open action active = %q", got.activeBuffer().Path)
 	}
 	updated, cmd = got.applyEditorAction(editor.Action{Kind: editor.ActionDefinition})
-	if cmd != nil {
-		t.Fatalf("non-go definition cmd = %v, want nil", cmd)
+	if cmd == nil {
+		t.Fatal("non-go definition should fall back to symbol search")
 	}
 	got = updated.(Model)
 	updated, cmd = got.applyEditorAction(editor.Action{Kind: editor.ActionReferences})
-	if cmd != nil {
-		t.Fatalf("non-go references cmd = %v, want nil", cmd)
+	if cmd == nil {
+		t.Fatal("non-go references should fall back to symbol search")
 	}
 
 	updated, cmd = got.applyEditorAction(editor.Action{Kind: editor.ActionExternal})
@@ -751,11 +751,21 @@ func TestLSPCommandsAndHandlers(t *testing.T) {
 	m.gitRoot = root
 	_ = m.openEditorTab(goFile)
 	m.cfg.EnableLSP = false
-	if cmd := m.definitionCmd(); cmd != nil {
-		t.Fatalf("disabled definition cmd = %v, want nil", cmd)
+	cmd := m.definitionCmd()
+	if cmd == nil {
+		t.Fatal("disabled definition should fall back to symbol search")
 	}
-	if cmd := m.referencesCmd(); cmd != nil {
-		t.Fatalf("disabled references cmd = %v, want nil", cmd)
+	fallbackDef := cmd().(definitionMsg)
+	if !fallbackDef.Fallback || fallbackDef.Symbol != "package" {
+		t.Fatalf("disabled definition fallback = %#v", fallbackDef)
+	}
+	cmd = m.referencesCmd()
+	if cmd == nil {
+		t.Fatal("disabled references should fall back to symbol search")
+	}
+	refMsg := cmd().(referencesMsg)
+	if !refMsg.Fallback || refMsg.Symbol != "package" {
+		t.Fatalf("disabled references fallback = %#v", refMsg)
 	}
 
 	t.Setenv("NAVIA_FAKE_GOPLS", "1")
@@ -763,7 +773,7 @@ func TestLSPCommandsAndHandlers(t *testing.T) {
 	t.Setenv("NAVIA_FAKE_LSP_REFERENCE", refFile)
 	m.cfg.EnableLSP = true
 	m.cfg.GoplsCommand = os.Args[0]
-	cmd := m.definitionCmd()
+	cmd = m.definitionCmd()
 	if cmd == nil {
 		t.Fatal("definitionCmd returned nil for Go buffer with LSP enabled")
 	}
@@ -807,6 +817,73 @@ func TestLSPCommandsAndHandlers(t *testing.T) {
 	updated, _ = got.handleReferences(referencesMsg{})
 	if got := updated.(Model); got.statusMessage != "No references found." {
 		t.Fatalf("references empty status = %q", got.statusMessage)
+	}
+}
+
+func TestSearchBackedDefinitionAndReferences(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "main.cpp")
+	header := filepath.Join(root, "player.ts")
+	lua := filepath.Join(root, "script.lua")
+	writeAppFile(t, source, "void Player::Attack() {\n  Attack();\n}\n")
+	writeAppFile(t, header, "export function Attack() {}\nconst other = Attack\n")
+	writeAppFile(t, lua, "local function Attack()\nend\n")
+
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd := m.openEditorTab(source); cmd != nil {
+		cmd()
+	}
+	buf := m.activeBuffer()
+	buf.Row = 0
+	buf.Col = strings.Index(buf.Lines[0], "Attack")
+	m.cfg.EnableLSP = false
+
+	cmd := m.definitionCmd()
+	if cmd == nil {
+		t.Fatal("definition fallback command is nil")
+	}
+	def := cmd().(definitionMsg)
+	if !def.Fallback || def.Symbol != "Attack" || len(def.Rows) < 3 {
+		t.Fatalf("definition fallback = %#v", def)
+	}
+	updated, _ := m.handleDefinition(def)
+	got := updated.(Model)
+	if got.focus != FocusTree || len(got.rows) != len(def.Rows) {
+		t.Fatalf("ambiguous definitions should show candidates: focus=%v rows=%d", got.focus, len(got.rows))
+	}
+
+	cmd = m.referencesCmd()
+	if cmd == nil {
+		t.Fatal("references fallback command is nil")
+	}
+	refs := cmd().(referencesMsg)
+	if !refs.Fallback || refs.Symbol != "Attack" || len(refs.Rows) < 4 {
+		t.Fatalf("references fallback = %#v", refs)
+	}
+	updated, _ = m.handleReferences(refs)
+	got = updated.(Model)
+	if got.focus != FocusTree || !strings.Contains(got.statusMessage, "references for `Attack`") {
+		t.Fatalf("references result focus/status = %v/%q", got.focus, got.statusMessage)
+	}
+
+	unique := filepath.Join(root, "unique.go")
+	writeAppFile(t, unique, "package main\nfunc UniqueJump() {}\n")
+	if cmd := got.openEditorTab(unique); cmd != nil {
+		cmd()
+	}
+	buf = got.activeBuffer()
+	buf.Row = 1
+	buf.Col = strings.Index(buf.Lines[1], "UniqueJump")
+	got.cfg.EnableLSP = false
+	cmd = got.definitionCmd()
+	def = cmd().(definitionMsg)
+	updated, _ = got.handleDefinition(def)
+	got = updated.(Model)
+	if got.activeBuffer().Path != unique || got.activeBuffer().Row != 1 || got.activeBuffer().Col != strings.Index(buf.Lines[1], "UniqueJump") {
+		t.Fatalf("unique definition jump buffer=%q row=%d col=%d", got.activeBuffer().Path, got.activeBuffer().Row, got.activeBuffer().Col)
 	}
 }
 

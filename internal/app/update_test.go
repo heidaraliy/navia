@@ -516,6 +516,24 @@ func TestFilterModeLetsJKTypeBeforeSearchSubmission(t *testing.T) {
 	}
 }
 
+func TestFilterModePastesFlattenedQueryText(t *testing.T) {
+	root := t.TempDir()
+	writeAppFile(t, filepath.Join(root, "alpha-beta.txt"), "needle\n")
+	m, err := New(root, config.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.mode = ModeFilter
+	m.filter = "alpha"
+	m.executedSearchQuery = "alpha"
+
+	updated, _ := m.updateFilter(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" beta\nneedle\tvalue"), Paste: true})
+	got := updated.(Model)
+	if got.filter != "alphabeta needle value" || got.executedSearchQuery != "" {
+		t.Fatalf("pasted filter/executed = %q/%q", got.filter, got.executedSearchQuery)
+	}
+}
+
 func TestSubmittedSearchResultsNavigateAndOpenSelection(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "a-combat.md")
