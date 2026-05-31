@@ -7,9 +7,8 @@
 <p><strong>A micro-IDE in your terminal.</strong></p>
 
 <p>
-Navia is a fast, keyboard-driven micro-IDE for developers who live in the
-terminal, but still want navigation, preview, search, editing, and git review
-in one clean workspace.
+Navia is a micro-IDE with navigation, preview, search, editing, and git review
+in your terminal.
 </p>
 
 <p>
@@ -36,7 +35,6 @@ in one clean workspace.
 
 ## Table of Contents
 
-- [Why Navia Exists](#why-navia-exists)
 - [Features](#features)
 - [Install](#install)
 - [Usage](#usage)
@@ -46,34 +44,6 @@ in one clean workspace.
 - [Releases](#releases)
 - [Contributing](#contributing)
 - [License](#license)
-
-## Why Navia Exists
-
-The terminal is powerful, but project navigation is still weirdly fragmented —
-at least for someone who was taught to program almost entirely in VS Code.
-
-As LLM tools like Claude Code and Codex became a bigger part of my workflow, I
-started living in the terminal more. Eventually, the back-and-forth between my
-editor, shell, file browser, search tools, and git commands became annoying.
-
-Jumping from `cd` to `ls` to `find` to `grep` to `nvim` to `git diff` works,
-but it is not exactly what I would call fun. It feels like starting with a 6mm
-socket and trying every size until one finally fits.
-
-Navia gives you one focused surface for the stuff you do constantly inside a
-codebase:
-
-- move around the tree
-- preview files without opening them
-- search file names and file contents
-- make quick edits
-- review diffs
-- stage, commit, and push changes
-- safely move, rename, copy, paste, and delete files
-
-It is definitely *not* trying to replace your editor or shell.
-
-It *is* trying to make the space between them way cleaner.
 
 ## Features
 
@@ -428,10 +398,6 @@ See [docs/releasing.md](docs/releasing.md) for the release checklist.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor workflow and
 [AGENTS.md](AGENTS.md) for agent-specific orchestration.
 
-Keep changes small, tested, and explicit about filesystem safety.
-
-Navia touches real files. Correctness matters.
-
 ## License
 
-MIT
+MIT.
