@@ -4,8 +4,6 @@
   <img src="docs/assets/navia-logo.svg" alt="Navia" width="486">
 </h1>
 
-<p><strong>A micro-IDE in your terminal.</strong></p>
-
 <p>
 Navia is a micro-IDE with navigation, preview, search, editing, and git review
 in your terminal.
