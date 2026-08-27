@@ -123,7 +123,6 @@ func (m *Model) queueNavPreview() tea.Cmd {
 		return nil
 	}
 	path, maxBytes, opts, renderer := row.entry.Path, m.cfg.PreviewMaxBytes, m.navScanOptions(), m.syntax
-	imageWidth, imageHeight := m.navPreviewSize()
 	m.navPreviewLines, m.navPreviewTop = []string{"Loading preview…"}, 0
 	return func() tea.Msg {
 		preview := navfs.BuildPreviewWithOptions(path, maxBytes, opts)
@@ -134,10 +133,6 @@ func (m *Model) queueNavPreview() tea.Cmd {
 			lines = lines[:limit]
 			for i, line := range lines {
 				lines[i] = renderer.HighlightLine(path, line)
-			}
-		} else if preview.Kind == navfs.PreviewImage {
-			if imageLines, err := navfs.RenderImage(path, imageWidth, imageHeight); err == nil && len(imageLines) > 0 {
-				lines = append(imageLines, append([]string{""}, lines...)...)
 			}
 		}
 		return navPreviewMsg{id: id, path: path, preview: preview, lines: lines}
@@ -196,9 +191,6 @@ func (m Model) updateNavigatorMessage(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.width, m.height = msg.Width, msg.Height
 			m.clampLayout()
 			m.clampNavSelection()
-			if m.navPreview.Kind == navfs.PreviewImage {
-				return m, m.queueNavPreview(), true
-			}
 			return m, nil, true
 		}
 	case tea.KeyMsg:
@@ -299,17 +291,11 @@ func (m Model) updateNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.fullscreen = 'l'
 		}
-		if m.navPreview.Kind == navfs.PreviewImage {
-			return m, m.queueNavPreview()
-		}
 	case "f":
 		if m.fullscreen == 'r' {
 			m.fullscreen = 0
 		} else {
 			m.fullscreen = 'r'
-		}
-		if m.navPreview.Kind == navfs.PreviewImage {
-			return m, m.queueNavPreview()
 		}
 	}
 	return m, nil
@@ -421,9 +407,6 @@ func (m Model) updateNavMouse(msg tea.MouseEvent) (tea.Model, tea.Cmd) {
 	}
 	if msg.Action == tea.MouseActionRelease {
 		m.dragging = false
-		if m.navPreview.Kind == navfs.PreviewImage {
-			return m, m.queueNavPreview()
-		}
 		return m, nil
 	}
 	firstRow := topHeight + 3
@@ -445,14 +428,6 @@ func (m Model) updateNavMouse(msg tea.MouseEvent) (tea.Model, tea.Cmd) {
 		m.scrollNavPreview(delta)
 	}
 	return m, nil
-}
-
-func (m Model) navPreviewSize() (int, int) {
-	width := m.width - m.leftWidth
-	if m.fullscreen == 'r' {
-		width = m.width
-	}
-	return max(1, width-2), max(1, m.diffHeight()-6)
 }
 
 func (m Model) renderNavigator() string {
