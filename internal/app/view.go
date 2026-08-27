@@ -22,8 +22,6 @@ var (
 	newStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("84"))
 	deletedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	otherStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
-	addRow        = lipgloss.NewStyle().Background(lipgloss.Color("22"))
-	removeRow     = lipgloss.NewStyle().Background(lipgloss.Color("52"))
 	hunkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Background(lipgloss.Color("235"))
 )
 
@@ -270,10 +268,6 @@ func (m Model) renderUnified(width, height int) []string {
 		}
 		row := fit(gutter+text, width)
 		switch line.Kind {
-		case gitview.Added:
-			row = addRow.Width(width).Render(row)
-		case gitview.Removed:
-			row = removeRow.Width(width).Render(row)
 		case gitview.Hunk:
 			row = hunkStyle.Width(width).Render(row)
 		case gitview.Header:
@@ -300,14 +294,15 @@ func (m Model) renderSideBySide(width, height int) []string {
 		if new != "" && (line.Kind == gitview.Context || line.Kind == gitview.Added || line.Kind == gitview.Removed) {
 			new = m.syntax.HighlightLine(m.diff.Path, new)
 		}
-		left := fit(fmt.Sprintf("%5s │ %s", number(line.Old), old), leftW)
-		right := fit(fmt.Sprintf("%5s │ %s", number(line.New), new), rightW)
+		oldMarker, newMarker := " ", " "
 		if line.OldText != "" && line.Kind == gitview.Removed {
-			left = removeRow.Width(leftW).Render(left)
+			oldMarker = deletedStyle.Render("-")
 		}
 		if line.NewText != "" && (line.Kind == gitview.Added || line.Kind == gitview.Removed) {
-			right = addRow.Width(rightW).Render(right)
+			newMarker = newStyle.Render("+")
 		}
+		left := fit(fmt.Sprintf("%s %4s │ %s", oldMarker, number(line.Old), old), leftW)
+		right := fit(fmt.Sprintf("%s %4s │ %s", newMarker, number(line.New), new), rightW)
 		rows = append(rows, left+dim.Render("│")+right)
 	}
 	return rows

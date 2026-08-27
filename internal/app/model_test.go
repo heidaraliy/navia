@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heidaraliy/navia/internal/config"
 	"github.com/heidaraliy/navia/internal/gitview"
+	"github.com/heidaraliy/navia/internal/syntax"
 )
 
 func TestNavigatorExpandsDirectoriesAndPreviewsFiles(t *testing.T) {
@@ -61,6 +62,62 @@ func TestNavigatorSearchAndReadOnlyKeys(t *testing.T) {
 	m = updated.(Model)
 	if len(m.navRows) != 1 || m.navRows[0].entry.Name != "needle.txt" {
 		t.Fatalf("search rows=%#v", m.navRows)
+	}
+}
+
+func TestArrowKeysExpandAndCollapseWithoutOpeningFiles(t *testing.T) {
+	root := t.TempDir()
+	mustWrite(t, filepath.Join(root, "dir", "file.txt"), "x\n")
+	m, err := New(root, config.Default(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.navSelected = 1
+	updated, cmd := m.updateNavKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(Model)
+	if cmd == nil || !m.expanded[filepath.Join(root, "dir")] {
+		t.Fatal("right did not expand directory")
+	}
+	m.navSelected = 2
+	updated, cmd = m.updateNavKey(tea.KeyMsg{Type: tea.KeyRight})
+	m = updated.(Model)
+	if cmd != nil {
+		t.Fatal("right opened a file")
+	}
+	m.navSelected = 1
+	updated, cmd = m.updateNavKey(tea.KeyMsg{Type: tea.KeyLeft})
+	m = updated.(Model)
+	if cmd == nil || m.expanded[filepath.Join(root, "dir")] {
+		t.Fatal("left did not collapse directory")
+	}
+	m.navSearching = true
+	m.navQuery = "Physics"
+	updated, _ = m.updateNavKey(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+	if m.navQuery != "Physics " {
+		t.Fatalf("space query=%q", m.navQuery)
+	}
+}
+
+func TestDiffRowsUseColoredGuttersWithoutFullRowBackgrounds(t *testing.T) {
+	m := Model{
+		diff: gitview.FileDiff{
+			Path:  "deleted.go",
+			Lines: []gitview.DiffLine{{Kind: gitview.Removed, Old: 1, Text: `package app`}},
+			Side:  []gitview.SideLine{{Kind: gitview.Removed, Old: 1, OldText: `package app`}},
+		},
+		syntax: syntax.New("navia"),
+	}
+	for name, rendered := range map[string]string{
+		"unified": strings.Join(m.renderUnified(100, 10), "\n"),
+		"split":   strings.Join(m.renderSideBySide(100, 10), "\n"),
+	} {
+		if strings.Contains(rendered, "\x1b[48;") {
+			t.Fatalf("%s diff applies a full-row background: %q", name, rendered)
+		}
+		if !strings.Contains(rendered, "-") {
+			t.Fatalf("%s diff is missing its deletion gutter: %q", name, rendered)
+		}
 	}
 }
 

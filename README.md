@@ -25,8 +25,9 @@ The default mode is the filesystem navigator. `-d` opens the Git differ directly
 | --- | --- |
 | `j/k`, `↑/↓` | Select a tree row. |
 | `J/K`, `Shift-↑/↓` | Page through tree rows. |
-| `Enter`, `l` | Expand/collapse a directory or open a file externally. |
-| `h`, `Backspace` | Collapse or move to the parent. |
+| `Enter` | Expand/collapse a directory or open a file externally. |
+| `l`, `→` | Expand a directory; do nothing on files. |
+| `h`, `←`, `Backspace` | Collapse or move to the parent. |
 | `/` | Search; `Tab` switches filename/content search. |
 | `D` | Open the Git differ. |
 | `F` / `f` | Toggle fullscreen tree / preview. |
