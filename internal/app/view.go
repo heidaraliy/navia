@@ -26,9 +26,11 @@ var (
 )
 
 const (
-	topHeight         = 6
-	addedBackground   = "\x1b[48;5;22m"
-	removedBackground = "\x1b[48;5;52m"
+	topHeight = 6
+	// Keep changed rows legible beneath the syntax palette. The gutter carries
+	// the strong status color; these fills are intentionally dark and quiet.
+	addedBackground   = "\x1b[48;2;20;48;36m"
+	removedBackground = "\x1b[48;2;55;29;36m"
 	driftLogo         = "                  ▀▀       \n" +
 		"████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄\n" +
 		"██ ██ ▄█▀██ ██▄██ ██  ▄█▀██\n" +
