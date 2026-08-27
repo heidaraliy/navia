@@ -269,6 +269,7 @@ func (m Model) renderUnified(width, height int) []string {
 			text = textsafe.Content(text)
 		}
 		if line.Kind == gitview.Added || line.Kind == gitview.Removed || line.Kind == gitview.Context {
+			text = expandTabs(text)
 			text = m.syntax.HighlightLine(m.diff.Path, text)
 		}
 		row := fit(gutter+text, width)
@@ -294,9 +295,11 @@ func (m Model) renderSideBySide(width, height int) []string {
 			old, new = textsafe.Content(old), textsafe.Content(new)
 		}
 		if old != "" && (line.Kind == gitview.Context || line.Kind == gitview.Removed) {
+			old = expandTabs(old)
 			old = m.syntax.HighlightLine(m.diff.Path, old)
 		}
 		if new != "" && (line.Kind == gitview.Context || line.Kind == gitview.Added || line.Kind == gitview.Removed) {
+			new = expandTabs(new)
 			new = m.syntax.HighlightLine(m.diff.Path, new)
 		}
 		oldMarker, newMarker := " ", " "
@@ -311,6 +314,10 @@ func (m Model) renderSideBySide(width, height int) []string {
 		rows = append(rows, left+dim.Render("│")+right)
 	}
 	return rows
+}
+
+func expandTabs(value string) string {
+	return strings.ReplaceAll(value, "\t", "    ")
 }
 
 func truncateLeft(value string, width int) string {

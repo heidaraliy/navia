@@ -122,6 +122,28 @@ func TestDiffRowsUseColoredGuttersWithoutFullRowBackgrounds(t *testing.T) {
 	}
 }
 
+func TestDiffRowsDoNotEmitLiteralTabs(t *testing.T) {
+	m := Model{
+		diff: gitview.FileDiff{
+			Path:  "tabbed.go",
+			Lines: []gitview.DiffLine{{Kind: gitview.Added, New: 1, Text: "\t\treturn true"}},
+			Side:  []gitview.SideLine{{Kind: gitview.Added, New: 1, NewText: "\t\treturn true"}},
+		},
+		syntax: syntax.New("navia"),
+	}
+	for name, rendered := range map[string]string{
+		"unified": strings.Join(m.renderUnified(40, 10), "\n"),
+		"split":   strings.Join(m.renderSideBySide(40, 10), "\n"),
+	} {
+		if strings.ContainsRune(rendered, '\t') {
+			t.Fatalf("%s diff emitted a literal tab: %q", name, rendered)
+		}
+		if width := lipgloss.Width(rendered); width != 40 {
+			t.Fatalf("%s diff width=%d, want 40", name, width)
+		}
+	}
+}
+
 func TestDiffModeAndHistorySelection(t *testing.T) {
 	root := gitFixture(t)
 	mustWrite(t, filepath.Join(root, "a.txt"), "two\n")
