@@ -37,12 +37,15 @@ func SearchFiles(root, query string, opts ScanOptions) ([]SearchMatch, error) {
 			}
 			return nil
 		}
-		if len(tokens) == 0 || matchFileTokens(root, path, tokens) {
+		if path == root && len(tokens) > 0 {
+			return nil
+		}
+		if score, ok := fileMatchScore(root, path, query, tokens); len(tokens) == 0 || ok {
 			info, err := d.Info()
 			if err != nil {
 				return nil
 			}
-			matches = append(matches, SearchMatch{Entry: NewEntry(path, info)})
+			matches = append(matches, SearchMatch{Entry: NewEntry(path, info), Score: score})
 			if len(tokens) == 0 && len(matches) >= MaxIndexedFiles {
 				return filepath.SkipAll
 			}
@@ -50,6 +53,9 @@ func SearchFiles(root, query string, opts ScanOptions) ([]SearchMatch, error) {
 		return nil
 	})
 	sort.SliceStable(matches, func(i, j int) bool {
+		if matches[i].Score != matches[j].Score {
+			return matches[i].Score > matches[j].Score
+		}
 		aDepth := strings.Count(searchRelativePath(root, matches[i].Entry.Path), "/")
 		bDepth := strings.Count(searchRelativePath(root, matches[j].Entry.Path), "/")
 		if aDepth != bDepth {
@@ -74,14 +80,50 @@ func MatchFileQuery(root, path, query string) bool {
 }
 
 func matchFileTokens(root, path string, tokens []string) bool {
+	_, ok := fileMatchScore(root, path, "", tokens)
+	return ok
+}
+
+func fileMatchScore(root, path, query string, tokens []string) (int, bool) {
 	name := strings.ToLower(filepath.Base(path))
 	rel := strings.ToLower(searchRelativePath(root, path))
+	score := 0
+	normalizedQuery := strings.Join(searchTokens(query), "")
+	if normalizedQuery != "" && strings.Contains(strings.ReplaceAll(name, " ", ""), normalizedQuery) {
+		score += 200
+	}
 	for _, token := range tokens {
-		if !strings.Contains(name, token) && !strings.Contains(rel, token) {
-			return false
+		switch {
+		case strings.Contains(name, token):
+			score += 100
+		case strings.Contains(rel, token):
+			score += 60
+		case fuzzyToken(name, token):
+			score += 20
+		case fuzzyToken(rel, token):
+			score += 10
+		default:
+			return 0, false
 		}
 	}
-	return true
+	return score, true
+}
+
+func fuzzyToken(value, token string) bool {
+	if token == "" {
+		return true
+	}
+	tokenRunes := []rune(token)
+	i := 0
+	for _, r := range value {
+		if r == tokenRunes[i] {
+			i++
+			if i == len(tokenRunes) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func SearchText(root, query string, maxBytes int64, opts ScanOptions) ([]SearchMatch, error) {
