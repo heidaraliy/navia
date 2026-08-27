@@ -1,6 +1,9 @@
 package app
 
 import (
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +41,37 @@ func TestNavigatorExpandsDirectoriesAndPreviewsFiles(t *testing.T) {
 	m = updated.(Model)
 	if !handled || m.navPreview.Kind != "text" || !strings.Contains(strings.Join(m.navPreviewLines, "\n"), "package") {
 		t.Fatalf("preview=%#v", m.navPreview)
+	}
+}
+
+func TestNavigatorRendersImagePreview(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "pixel.png")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	img.Set(1, 1, color.RGBA{B: 255, A: 255})
+	if err := png.Encode(file, img); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m, err := New(root, config.Default(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.width, m.height, m.leftWidth = 100, 30, 30
+	m.navSelected = 1
+	msg := m.queueNavPreview()()
+	updated, _, handled := m.updateNavigatorMessage(msg)
+	m = updated.(Model)
+	if !handled || m.navPreview.Kind != "image" || !strings.Contains(strings.Join(m.navPreviewLines, "\n"), "▀") {
+		t.Fatalf("image preview=%#v lines=%q", m.navPreview, m.navPreviewLines)
 	}
 }
 
