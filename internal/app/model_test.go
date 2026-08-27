@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/heidaraliy/navia/internal/config"
 	"github.com/heidaraliy/navia/internal/gitview"
 	"github.com/heidaraliy/navia/internal/syntax"
@@ -160,6 +161,11 @@ func TestViewsStayBoundedAtSmallAndLargeSizes(t *testing.T) {
 		view := m.View()
 		if strings.Count(view, "\n") > size[1]+4 {
 			t.Fatalf("view lines=%d height=%d", strings.Count(view, "\n"), size[1])
+		}
+		for lineNumber, line := range strings.Split(view, "\n") {
+			if width := lipgloss.Width(line); width >= size[0] {
+				t.Fatalf("line %d width=%d terminal width=%d", lineNumber, width, size[0])
+			}
 		}
 	}
 }
