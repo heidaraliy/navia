@@ -28,7 +28,7 @@ Build Navia into a professional, safe, open-source terminal file navigator. Good
 - `navia-build-engineer`: Go build, test, run, CI, and worktree workflow.
 - `navia-tui-engineer`: Bubble Tea model/update/view work, terminal UX, keybindings, and layout.
 - `navia-render-performance-engineer`: per-frame TUI/editor rendering, allocation discipline, cache bounds, and space-time complexity review.
-- `navia-filesystem-safety-engineer`: copy, move, rename, safe delete, path validation, preview, search, and config safety.
+- `navia-filesystem-safety-engineer`: read-only scanning, path validation, preview, search, config, and editor-handoff safety.
 - `navia-git-release-engineer`: git helpers, repository automation, release, install, and PR hygiene.
 - `navia-docs-engineer`: README, contributor docs, security docs, examples, and public-facing copy.
 
@@ -39,10 +39,10 @@ Use the smallest skill set that covers the task.
 - Never implement, commit, or push feature work from `main`.
 - Use feature worktrees under `~/programs/wt` and branches named `agent/<slug>`.
 - Filesystem operations must be predictable, path-bounded, and covered by temp-dir tests.
-- Preserve safe delete as the default; destructive behavior requires explicit code and documentation review.
+- Preserve Navia's read-only boundary; filesystem or Git mutation requires an explicit product-scope proposal.
 - Terminal UI changes must keep keyboard workflows visible, responsive, and usable in small terminals.
 - Per-frame rendering must stay bounded by visible output where possible, with explicit review for allocation growth, cache bounds, and avoidable `O(n^2)` work.
-- Prefer existing package boundaries: `internal/app`, `internal/fs`, `internal/config`, `internal/git`, `internal/shellteach`, and `internal/ui`.
+- Prefer existing package boundaries: `internal/app`, `internal/fs`, `internal/config`, `internal/gitview`, `internal/syntax`, and `internal/textsafe`.
 - Keep root guidance compact; put detailed agent rules in `tools/agents/**` or skills.
 
 ## Required Validation

@@ -9,7 +9,7 @@ Read only the instruction files that match the task.
 | `AGENTS.md`, `.codex/skills/**`, `tools/agents/**`, hooks, evals | `agent-config.instructions.md` |
 | `internal/app/**`, `internal/ui/**`, terminal layout, keybindings, Bubble Tea flows | `go-tui.instructions.md` |
 | per-frame rendering, editor render paths, syntax highlighting, preview/diff rendering, tabs, render caches | `render-performance.instructions.md` |
-| `internal/fs/**`, `internal/config/**`, delete/move/copy/search/preview behavior | `filesystem-safety.instructions.md` |
+| `internal/fs/**`, `internal/config/**`, scanning/search/preview behavior | `filesystem-safety.instructions.md` |
 | `.github/**`, releases, install docs, git helpers, publishing | `repo-automation.instructions.md` |
 
 When a task spans domains, read all matching files and load the corresponding skills.

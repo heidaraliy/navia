@@ -1,6 +1,6 @@
 ---
 name: navia-filesystem-safety-engineer
-description: Filesystem safety skill for Navia. Use for copy, move, rename, create, safe delete, trash, path validation, search, preview, config loading, editor launching, and any behavior that touches user files.
+description: Filesystem safety skill for Navia. Use for read-only scanning, path validation, search, preview, config loading, editor launching, and any behavior that touches user files.
 ---
 
 # Navia Filesystem Safety Engineer
@@ -10,7 +10,7 @@ Use this skill for `internal/fs`, `internal/config`, and file-affecting app flow
 ## Rules
 
 - Treat file mutations as safety-critical.
-- Preserve safe delete as the default behavior.
+- Preserve Navia's read-only boundary; do not add filesystem mutation without an explicit product-scope proposal.
 - Use `t.TempDir()` and `t.Setenv()` in tests.
 - Avoid tests that depend on the developer's home directory or editor.
 - Bound previews by configured byte limits.
@@ -23,7 +23,7 @@ Use this skill for `internal/fs`, `internal/config`, and file-affecting app flow
 
 ## Review Focus
 
-- unintended overwrite behavior
+- accidental mutation or overwrite behavior
 - path traversal or wrong-root operations
 - unsafe fallback when config parsing fails
 - missing test coverage for error paths

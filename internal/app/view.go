@@ -2,985 +2,421 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	termansi "github.com/charmbracelet/x/ansi"
-	"github.com/heidaraliy/navia/internal/editor"
-	navfs "github.com/heidaraliy/navia/internal/fs"
-	"github.com/heidaraliy/navia/internal/git"
+	"github.com/heidaraliy/navia/internal/gitview"
 	"github.com/heidaraliy/navia/internal/textsafe"
 )
 
-type footerHint struct {
-	key   string
-	label string
-}
+var (
+	brand         = lipgloss.Color("73")
+	accent        = lipgloss.Color("111")
+	dim           = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	border        = lipgloss.NewStyle().Foreground(lipgloss.Color("24"))
+	focusedBorder = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
+	selectedStyle = lipgloss.NewStyle().Background(lipgloss.Color("236")).Bold(true)
+	modifiedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220"))
+	newStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("84"))
+	deletedStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	otherStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("117"))
+	addRow        = lipgloss.NewStyle().Background(lipgloss.Color("22"))
+	removeRow     = lipgloss.NewStyle().Background(lipgloss.Color("52"))
+	hunkStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Background(lipgloss.Color("235"))
+)
 
-func (m Model) View() (out string) {
-	start := perfNow()
-	defer func() {
-		perfLogDuration("app.view", start, "mode", fmt.Sprintf("%d", m.mode))
-	}()
+const (
+	topHeight = 6
+	driftLogo = "                  ▀▀       \n" +
+		"████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄\n" +
+		"██ ██ ▄█▀██ ██▄██ ██  ▄█▀██\n" +
+		"██ ██ ▀█▄██  ▀█▀  ██▄ ▀█▄██"
+)
+
+func (m Model) View() string {
 	if m.width == 0 {
-		return "Navia is starting..."
+		return "Navia is opening…"
 	}
-	leftW, rightW := m.paneWidths()
-	top := m.renderTop()
-	main := m.renderMain(leftW, rightW)
-	footer := m.renderFooter()
-	body := lipgloss.JoinVertical(lipgloss.Left, top, main, footer)
-	if m.mode == ModeHelp {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.renderHelp(), lipgloss.WithWhitespaceChars(" "))
+	if m.mode == 'n' {
+		return m.renderNavigator()
 	}
-	if m.mode == ModeConfirmDelete || m.mode == ModeRename || m.mode == ModeNewFile || m.mode == ModeNewDir || m.mode == ModeGoToPath || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		return body + "\n" + m.renderModal()
+	if m.historyOpen {
+		return m.renderHistory()
 	}
-	return body
-}
-
-func (m Model) renderMain(leftW, rightW int) string {
-	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		return lipgloss.JoinHorizontal(lipgloss.Top, m.renderDiffList(leftW), m.renderDiffPane(rightW))
+	if m.help {
+		return m.renderHelp()
 	}
-	if m.treeHidden && m.activeBuffer() != nil {
-		return m.renderRightPane(m.width)
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(leftW), m.renderRightPane(rightW))
-}
-
-func (m Model) renderTop() string {
-	left := m.topLeft()
-	right := m.topRightMeta()
-	row1 := left
-	if right != "" {
-		gap := max(1, m.width-lipgloss.Width(left)-lipgloss.Width(right)-1)
-		row1 += strings.Repeat(" ", gap) + m.styles.Dim.Render(right)
-	}
-	row2 := m.renderTabs(m.width)
-	if row2 == "" {
-		row2 = m.styles.Dim.Render(m.topContext())
-	}
-	return m.styles.TopBar.Width(m.width).Height(m.topHeight()).Render(clipStyled(row1, m.width) + "\n" + clipStyled(row2, m.width))
-}
-
-func (m Model) topLeft() string {
-	editorFocused := m.focus == FocusEditor && m.activeBuffer() != nil
-	if m.mode == ModeFilter || (m.filter != "" && !editorFocused) {
-		return m.topTag("SEARCH", lipgloss.Color("58"), lipgloss.Color("229")) +
-			m.topTag(strings.ToUpper(m.searchModeLabel()), searchModeColor(m.searchMode), lipgloss.Color("230")) +
-			" " + m.renderSearchQuery()
-	}
-	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		if m.diffPatchReview != nil {
-			return m.topTag("PATCH", lipgloss.Color("125"), lipgloss.Color("230"))
-		}
-		return m.topTag("DIFF", lipgloss.Color("125"), lipgloss.Color("230"))
-	}
-	if editorFocused {
-		if buf := m.activeBuffer(); buf != nil {
-			mode := editorModeLabel(buf)
-			line := m.topTag("EDITOR", lipgloss.Color("39"), lipgloss.Color("230")) +
-				m.topTag(mode, editorModeColor(mode), lipgloss.Color("230"))
-			if cmd := buf.CommandLine(); cmd != "" {
-				line += " " + m.commandCue(mode).Render(displayText(cmd))
-			} else if cmd := buf.NormalCommandLine(); cmd != "" {
-				line += " " + m.commandCue(mode).Render(displayText(cmd))
-			}
-			return line
-		}
-	}
-	mode := "TREE"
-	if m.treeHidden && m.activeBuffer() != nil {
-		mode += " ONLY"
-	}
-	if m.mode == ModeHelp {
-		mode = "HELP"
-		return m.topTag(mode, lipgloss.Color("147"), lipgloss.Color("230"))
-	}
-	return m.topTag(mode, lipgloss.Color("39"), lipgloss.Color("230"))
-}
-
-func (m Model) topTag(label string, bg, fg lipgloss.Color) string {
-	return lipgloss.NewStyle().Foreground(fg).Background(bg).Bold(true).Padding(0, 1).Render(label)
-}
-
-func (m Model) commandCue(mode string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(commandCueColor(mode)).Underline(true)
-}
-
-func (m Model) renderSearchQuery() string {
-	cursor := m.searchCursor()
-	if m.filter == "" {
-		if m.mode == ModeFilter {
-			return cursor + " " + m.styles.Dim.Render("enter query...")
-		}
-		return m.styles.Dim.Render("enter query...")
-	}
-	query := m.styles.Highlight.Render(displayText(m.filter))
-	if m.mode == ModeFilter {
-		return query + cursor
-	}
-	return query
-}
-
-func (m Model) searchCursor() string {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("16")).
-		Background(lipgloss.Color("229")).
-		Bold(true).
-		Render("|")
-}
-
-func commandCueColor(mode string) lipgloss.Color {
-	switch mode {
-	case "EXEC":
-		return lipgloss.Color("174")
-	case "SEARCH":
-		return lipgloss.Color("186")
-	case "INSERT":
-		return lipgloss.Color("114")
-	case "VISUAL", "VISUAL-LINE":
-		return lipgloss.Color("183")
+	header := m.header()
+	var body string
+	switch m.fullscreen {
+	case 'l':
+		body = m.renderList(m.width)
+	case 'r':
+		body = m.renderDiff(m.width)
 	default:
-		return lipgloss.Color("110")
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderList(m.leftWidth), m.renderDiff(m.width-m.leftWidth))
 	}
+	return lipgloss.JoinVertical(lipgloss.Left, header, body)
 }
 
-func editorModeColor(mode string) lipgloss.Color {
-	switch mode {
-	case "INSERT":
-		return lipgloss.Color("29")
-	case "VISUAL":
-		return lipgloss.Color("92")
-	case "VISUAL-LINE":
-		return lipgloss.Color("126")
-	case "EXEC":
-		return lipgloss.Color("130")
-	case "SEARCH":
-		return lipgloss.Color("58")
-	default:
-		return lipgloss.Color("24")
+func (m Model) header() string {
+	logo := strings.Split(driftLogo, "\n")
+	logoStyle := lipgloss.NewStyle().Foreground(brand)
+	files := dim.Render("Files │ scanning repository…")
+	lines := ""
+	if m.mode == 'n' {
+		files = dim.Render(fmt.Sprintf("Files │ %d visible", len(m.navRows)))
+		lines = dim.Render("Root  │ " + truncateLeft(m.browseRoot, 44))
+	} else if !m.summaryLoading {
+		files = dim.Render(fmt.Sprintf("Files │ %d • ", len(m.changes))) + newStyle.Render(fmt.Sprintf("+%d", m.counts.FilesNew)) + dim.Render(" • ") + modifiedStyle.Render(fmt.Sprintf("~%d", m.counts.FilesModified)) + dim.Render(" • ") + deletedStyle.Render(fmt.Sprintf("-%d", m.counts.FilesDeleted))
+		lines = dim.Render("Lines │ ") + newStyle.Render(fmt.Sprintf("+%s", comma(m.counts.LinesNew))) + dim.Render(" • ") + modifiedStyle.Render(fmt.Sprintf("~%s", comma(m.counts.LinesModified))) + dim.Render(" • ") + deletedStyle.Render(fmt.Sprintf("-%s", comma(m.counts.LinesDeleted)))
 	}
-}
-
-func searchModeColor(mode SearchMode) lipgloss.Color {
-	if mode == SearchText {
-		return lipgloss.Color("90")
+	prompt := dim.Render("Press ? for keybinds.")
+	if m.status != "" {
+		prompt = dim.Render(m.status)
 	}
-	return lipgloss.Color("24")
-}
-
-func (m Model) topRightMeta() string {
-	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		return fmt.Sprintf("Files:%d", len(m.diffChanges))
+	statsWidth := max(34, max(lipgloss.Width(files), max(lipgloss.Width(lines), lipgloss.Width(prompt)))+4)
+	stats := []string{
+		border.Render("╭" + strings.Repeat("─", statsWidth-2) + "╮"),
+		border.Render("│") + " " + fit(files, statsWidth-3) + border.Render("│"),
+		border.Render("│") + " " + fit(lines, statsWidth-3) + border.Render("│"),
+		border.Render("│") + " " + fit(prompt, statsWidth-3) + border.Render("│"),
+		border.Render("╰" + strings.Repeat("─", statsWidth-2) + "╯"),
 	}
-	if buf := m.activeBuffer(); buf != nil && m.focus == FocusEditor {
-		if buf.IsMarkdown() {
-			return fmt.Sprintf("Markdown  Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
-		}
-		return fmt.Sprintf("Lines:%d  %d:%d", len(buf.Lines), buf.CursorLine(), buf.CursorCol())
+	rows := []string{
+		fit(" "+logoStyle.Render(logo[0])+"   "+stats[0], m.width),
+		fit(" "+logoStyle.Render(logo[1])+"   "+stats[1], m.width),
+		fit(" "+logoStyle.Render(logo[2])+"   "+stats[2], m.width),
+		fit(" "+logoStyle.Render(logo[3])+"   "+stats[3], m.width),
+		fit(strings.Repeat(" ", lipgloss.Width(logo[0])+4)+stats[4], m.width),
+		strings.Repeat(" ", m.width),
 	}
-	return fmt.Sprintf("Rows:%d", len(m.rows))
-}
-
-func (m Model) topContext() string {
-	project := filepath.Base(m.cwd)
-	path := m.cwd
-	if m.gitRoot != "" {
-		project = filepath.Base(m.gitRoot)
-		path = gitPathLabel(m.gitRoot, m.cwd)
-	}
-	context := displayText(project) + "  " + displayText(path)
-	if m.mode == ModeFilter {
-		context = "tab toggles files/text  enter runs recursive search"
-	} else if m.filter != "" {
-		context = "/ refines search  esc clears results"
-	} else if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		context = diffSummaryText(m.diffSummary)
-		if m.diffPatchReview != nil {
-			context = displayText(m.diffPatchLabel) + "  " + context
-		}
-	} else if buf := m.activeBuffer(); buf != nil {
-		context = tabLabel(buf) + "  " + displayText(statusPath(buf.Path))
-	}
-	return context
-}
-
-func (m Model) renderTabs(width int) string {
-	if width <= 0 || len(m.editorTabs) == 0 {
-		return ""
-	}
-	indicatorW := 0
-	if m.activeTab > 0 {
-		indicatorW += 2
-	}
-	if m.activeTab < len(m.editorTabs)-1 {
-		indicatorW += 2
-	}
-	available := max(0, width-indicatorW)
-	start, end := m.visibleTabRange(available)
-	parts := make([]string, 0, end-start+2)
-	if start > 0 {
-		parts = append(parts, m.styles.Dim.Render("‹ "))
-	}
-	for i := start; i < end; i++ {
-		parts = append(parts, m.renderTab(i))
-	}
-	if end < len(m.editorTabs) {
-		parts = append(parts, m.styles.Dim.Render(" ›"))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-}
-
-func (m Model) visibleTabRange(width int) (int, int) {
-	if width <= 0 {
-		return m.activeTab, m.activeTab
-	}
-	start, end := m.activeTab, m.activeTab+1
-	used := m.tabWidth(m.activeTab)
-	for {
-		added := false
-		if start > 0 && used+m.tabWidth(start-1) <= width {
-			start--
-			used += m.tabWidth(start)
-			added = true
-		}
-		if end < len(m.editorTabs) && used+m.tabWidth(end) <= width {
-			used += m.tabWidth(end)
-			end++
-			added = true
-		}
-		if !added {
-			break
-		}
-	}
-	return start, end
-}
-
-func (m Model) tabWidth(index int) int {
-	if index < 0 || index >= len(m.editorTabs) {
-		return 0
-	}
-	return lipgloss.Width(m.tabText(index)) + 5
-}
-
-func (m Model) tabText(index int) string {
-	return fmt.Sprintf("%d:%s", index+1, tabLabel(m.editorTabs[index]))
-}
-
-func (m Model) renderTab(index int) string {
-	active := index == m.activeTab
-	focused := active && m.focus == FocusEditor
-	style := lipgloss.NewStyle().MarginRight(1)
-	text := "╭ " + m.tabText(index) + " ╮"
-	switch {
-	case focused:
-		style = style.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("24")).Bold(true)
-	case active:
-		style = style.Foreground(lipgloss.Color("81")).Bold(true)
-	default:
-		style = style.Foreground(lipgloss.Color("67"))
-	}
-	return style.Render(text)
-}
-
-func gitPathLabel(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == "." {
-		return "."
-	}
-	return rel
-}
-
-func (m Model) searchModeLabel() string {
-	if m.searchMode == SearchText {
-		return "text"
-	}
-	return "files"
+	return strings.Join(rows, "\n")
 }
 
 func (m Model) renderList(width int) string {
-	height := m.listHeight()
-	innerW := max(8, width-4)
-	innerH := max(4, height-2)
-	panel := m.panelStyle(FocusTree)
-	if len(m.rows) == 0 {
-		content := m.styles.TreePane.Width(innerW).Height(innerH).Render(m.styles.Dim.Render("No entries."))
-		return panel.Width(width - 2).Height(height).Render(content)
-	}
-	start := m.selectedIndex - innerH/2
-	if start < 0 {
-		start = 0
-	}
-	if start+innerH > len(m.rows) {
-		start = len(m.rows) - innerH
-	}
-	if start < 0 {
-		start = 0
-	}
-	lines := make([]string, 0, innerH)
-	treeFocused := m.focus == FocusTree
-	for i := start; i < len(m.rows) && len(lines) < innerH; i++ {
-		result := m.rows[i]
-		entry := result.Entry
-		row, ok := m.rowForPath(entry.Path)
-		if !ok {
-			row = TreeRow{Entry: entry, Depth: result.Depth}
+	paneWidth := max(10, width)
+	w := paneWidth - 2
+	h := m.listHeight()
+	changes := m.visibleChanges()
+	lines := make([]string, 0, h)
+	if len(changes) == 0 {
+		message := "  Clean working tree."
+		if m.searchQuery != "" {
+			message = "  No matching files."
 		}
-		label := m.resultLabel(result, row)
-		line := truncate(label, innerW)
-		if entry.IsDir {
-			if treeFocused {
-				line = m.styles.Dir.Render(line)
-			} else {
-				line = m.styles.DirDim.Render(line)
-			}
-		} else if !treeFocused {
-			line = m.styles.TreeDim.Render(line)
+		lines = append(lines, dim.Render(message))
+	}
+	for i := m.listTop; i < len(changes) && len(lines) < h; i++ {
+		change := changes[i]
+		status := string(change.Kind)
+		if change.Kind == gitview.Untracked {
+			status = "A"
 		}
-		if i == m.selectedIndex {
-			if treeFocused {
-				line = m.styles.Selected.Width(innerW).Render(line)
-			} else {
-				line = m.styles.SelectedBlurred.Width(innerW).Render(line)
-			}
-		}
-		lines = append(lines, line)
-	}
-	content := m.styles.TreePane.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
-	return panel.Width(width - 2).Height(height).Render(content)
-}
-
-func (m Model) resultLabel(result ResultRow, row TreeRow) string {
-	entry := result.Entry
-	if m.hasSubmittedSearch() {
-		path := displayText(m.searchResultPath(entry.Path))
-		if entry.IsDir {
-			path += "/"
-		}
-		if result.Line > 0 {
-			return fmt.Sprintf("%s:%d %s", path, result.Line, displayText(result.Snippet))
-		}
-		return path
-	}
-	name := displayText(entry.Name)
-	if entry.IsDir {
-		name += "/"
-	}
-	indent := strings.Repeat(" ", row.Depth)
-	icon := "  "
-	if entry.IsDir {
-		if row.Expanded {
-			icon = "▾ "
-		} else {
-			icon = "▸ "
-		}
-	}
-	if result.Line > 0 {
-		return fmt.Sprintf("%s:%d %s", name, result.Line, displayText(result.Snippet))
-	}
-	return indent + icon + name
-}
-
-func (m Model) searchResultPath(path string) string {
-	if rel, err := filepath.Rel(m.cwd, path); err == nil && relInsideRoot(rel) {
-		if rel == "." {
-			return filepath.Base(path)
-		}
-		return filepath.ToSlash(rel)
-	}
-	if m.gitRoot != "" {
-		return filepath.ToSlash(git.Rel(m.gitRoot, path))
-	}
-	return statusPath(path)
-}
-
-func relInsideRoot(rel string) bool {
-	if rel == "." {
-		return true
-	}
-	if filepath.IsAbs(rel) || rel == ".." {
-		return false
-	}
-	return !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
-
-func (m Model) renderDiffList(width int) string {
-	height := m.listHeight()
-	innerW := max(8, width-4)
-	innerH := max(4, height-2)
-	panel := m.panelStyle(FocusTree)
-	if len(m.diffChanges) == 0 {
-		content := m.styles.TreePane.Width(innerW).Height(innerH).Render(m.styles.Dim.Render("No modified or untracked files."))
-		return panel.Width(width - 2).Height(height).Render(content)
-	}
-	start := m.diffSelectedIndex - innerH/2
-	if start < 0 {
-		start = 0
-	}
-	if start+innerH > len(m.diffChanges) {
-		start = len(m.diffChanges) - innerH
-	}
-	if start < 0 {
-		start = 0
-	}
-	lines := make([]string, 0, innerH)
-	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	for i := start; i < len(m.diffChanges) && len(lines) < innerH; i++ {
-		change := m.diffChanges[i]
-		label := fmt.Sprintf("%s %-9s %s", diffStatusText(change), diffKindLabel(change), displayText(change.Path))
+		prefix := status + "  "
+		path := cleanPath(change.Path)
 		if change.OldPath != "" {
-			label = fmt.Sprintf("%s %-9s %s -> %s", diffStatusText(change), diffKindLabel(change), displayText(change.OldPath), displayText(change.Path))
+			path = cleanPath(change.OldPath) + " → " + path
 		}
-		line := truncate(label, innerW)
+		line := prefix + truncateLeft(path, max(1, w-lipgloss.Width(prefix)))
+		style := otherStyle
 		switch change.Kind {
-		case git.ChangeAdded, git.ChangeUntracked:
-			line = addedStyle.Render(line)
-		case git.ChangeDeleted:
-			line = deletedStyle.Render(line)
-		default:
-			line = m.styles.TreePane.Render(line)
+		case gitview.Modified:
+			style = modifiedStyle
+		case gitview.Untracked, gitview.Copied:
+			style = newStyle
+		case gitview.Deleted:
+			style = deletedStyle
 		}
-		if i == m.diffSelectedIndex {
-			line = m.styles.Selected.Width(innerW).Render(line)
-		}
-		lines = append(lines, line)
-	}
-	content := m.styles.TreePane.Width(innerW).Height(innerH).Render(strings.Join(lines, "\n"))
-	return panel.Width(width - 2).Height(height).Render(content)
-}
-
-func (m Model) renderDiffPane(width int) string {
-	height := m.listHeight()
-	innerW := max(8, width-4)
-	innerH := max(4, height-2)
-	title := "Diff"
-	if change, ok := m.selectedDiffChange(); ok {
-		title = displayText(change.Path)
-	}
-	header := m.styles.Highlight.Render(truncate(title, innerW))
-	content := m.renderDiffContent()
-	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
-	return m.panelStyle(FocusEditor).Width(width - 2).Height(height).Render(body)
-}
-
-func (m Model) renderDiffContent() string {
-	content := m.diffViewport.View()
-	lines := strings.Split(content, "\n")
-	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	for i, line := range lines {
-		switch diffLineStyle(line) {
-		case "add":
-			lines[i] = addedStyle.Render(line)
-		case "remove":
-			lines[i] = deletedStyle.Render(line)
-		case "hunk":
-			lines[i] = m.styles.Highlight.Render(line)
-		case "header":
-			lines[i] = m.styles.Dim.Render(line)
-		default:
-			lines[i] = line
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (m Model) renderRightPane(width int) string {
-	if buf := m.activeBuffer(); buf != nil && (m.focus == FocusEditor || m.treeHidden) {
-		return m.renderEditor(width, buf)
-	}
-	return m.renderPreview(width)
-}
-
-func (m Model) renderPreview(width int) string {
-	height := m.listHeight()
-	innerW := max(8, width-4)
-	innerH := max(4, height-2)
-	panel := m.panelStyle(FocusEditor)
-	if m.shouldRenderIdleBrand() {
-		body := m.styles.Pane.Width(innerW).Height(innerH).Render(m.renderIdleBrand(innerW, innerH))
-		return panel.Width(width - 2).Height(height).Render(body)
-	}
-	title := m.preview.Title
-	if title == "" {
-		title = filepath.Base(m.selectedPathForStatus())
-	}
-	header := m.styles.Highlight.Render(displayText(title))
-	content := m.previewViewport.View()
-	body := m.styles.Pane.Width(innerW).Height(innerH).Render(header + "\n" + content)
-	return panel.Width(width - 2).Height(height).Render(body)
-}
-
-func (m Model) renderPreviewContent() string {
-	path := m.preview.Path
-	if entry, ok := m.selected(); ok {
-		path = entry.Path
-	}
-	return m.renderPreviewContentFor(m.preview, path)
-}
-
-func (m Model) renderPreviewContentFor(preview navfs.Preview, path string) string {
-	content := preview.Content
-	if preview.Kind != navfs.PreviewText {
-		return textsafe.Multiline(content)
-	}
-	if path == "" {
-		path = preview.Path
-	}
-	lines := strings.Split(content, "\n")
-	limit := m.previewRenderLineLimit()
-	truncatedLines := false
-	if len(lines) > limit {
-		lines = lines[:limit]
-		truncatedLines = true
-	}
-	truncatedLongLine := false
-	for i, line := range lines {
-		clipped, clippedLine := clipPreviewLine(line, m.previewRenderLineWidth())
-		if clippedLine {
-			truncatedLongLine = true
-		}
-		lines[i] = m.syntax.HighlightLine(path, clipped)
-	}
-	if truncatedLines || truncatedLongLine {
-		lines = append(lines, "", m.styles.Dim.Render(previewRenderNotice(truncatedLines, truncatedLongLine, limit)))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func (m Model) previewRenderLineLimit() int {
-	height := m.previewViewport.Height
-	if height <= 0 {
-		height = 24
-	}
-	limit := height * previewRenderOverscanScreens
-	if limit < height {
-		limit = height
-	}
-	if limit > previewRenderMaxLines {
-		limit = previewRenderMaxLines
-	}
-	if limit < 1 {
-		limit = 1
-	}
-	return limit
-}
-
-func (m Model) previewRenderLineWidth() int {
-	width := m.previewViewport.Width
-	if width <= 0 {
-		width = 80
-	}
-	limit := width * previewRenderOverscanScreens
-	if limit < width {
-		limit = width
-	}
-	if limit > previewRenderMaxLineRunes {
-		limit = previewRenderMaxLineRunes
-	}
-	if limit < 80 {
-		limit = 80
-	}
-	return limit
-}
-
-func clipPreviewLine(line string, maxRunes int) (string, bool) {
-	if maxRunes <= 0 {
-		maxRunes = 80
-	}
-	end, truncated := byteAfterRunes(line, maxRunes)
-	if !truncated {
-		return line, false
-	}
-	return line[:end] + " ...", true
-}
-
-func byteAfterRunes(s string, maxRunes int) (int, bool) {
-	if maxRunes <= 0 {
-		return 0, s != ""
-	}
-	count := 0
-	for i := range s {
-		if count == maxRunes {
-			return i, true
-		}
-		count++
-	}
-	return len(s), false
-}
-
-func previewRenderNotice(lines, longLine bool, limit int) string {
-	switch {
-	case lines && longLine:
-		return fmt.Sprintf("[preview render limited to %d lines and clipped long lines; open in editor for full context]", limit)
-	case lines:
-		return fmt.Sprintf("[preview render limited to %d lines; open in editor for full context]", limit)
-	default:
-		return "[preview clipped long lines; open in editor for full context]"
-	}
-}
-
-func (m Model) renderEditor(width int, buf *editor.Buffer) string {
-	height := m.listHeight()
-	innerW := max(8, width-4)
-	innerH := max(4, height-2)
-	active := m.activeBuffer()
-	title := ""
-	editorFocused := m.focus == FocusEditor
-	if active != nil {
-		path := statusPath(active.Path)
-		name := displayText(active.Name)
-		displayPath := displayText(path)
-		maxPath := max(0, innerW-lipgloss.Width(name)-1)
-		if editorFocused {
-			title = m.styles.Highlight.Render(name) + " " + m.styles.Dim.Render(clip(displayPath, maxPath))
+		if i == m.selected {
+			line = selectedStyle.Width(w).Render(line)
 		} else {
-			title = m.styles.TreeDim.Render(name + " " + clip(displayPath, maxPath))
+			line = style.Render(line)
+		}
+		lines = append(lines, fit(line, w))
+	}
+	for len(lines) < h {
+		lines = append(lines, strings.Repeat(" ", w))
+	}
+	title := fmt.Sprintf("Files Changed (%d)", len(m.changes))
+	if m.diffLabel != "" {
+		title = truncateLeft(m.diffLabel, max(12, w-4))
+	}
+	search := " Find a file…"
+	if m.searchQuery != "" || m.searching {
+		search = " / " + m.searchQuery
+		if m.searching {
+			search += "█"
+		} else if m.searchLoading {
+			search += "  searching contents…"
 		}
 	}
-	lines := buf.VisibleHighlighted(innerW, innerH-1, func(path, line string) string {
-		return m.syntax.HighlightLineWithSearch(path, line, buf.SearchQuery())
-	})
-	if !editorFocused {
-		for i, line := range lines {
-			lines[i] = m.styles.TreeDim.Render(line)
-		}
+	frame := border
+	heavy := false
+	if m.searching {
+		frame = focusedBorder
+		heavy = true
 	}
-	content := title + "\n" + strings.Join(lines, "\n")
-	body := lipgloss.NewStyle().Width(innerW).Height(innerH).Render(content)
-	return m.panelStyle(FocusEditor).Width(width - 2).Height(height).Render(body)
+	rows := []string{
+		paneTop(title, "", paneWidth, frame, heavy),
+		paneRow(dim.Render(fit(search, w)), paneWidth, frame, heavy),
+		paneRule(paneWidth, frame, heavy),
+	}
+	for _, line := range lines {
+		rows = append(rows, paneRow(line, paneWidth, frame, heavy))
+	}
+	rows = append(rows, paneBottom(paneWidth, frame, heavy))
+	return strings.Join(rows, "\n")
 }
 
-func (m Model) panelStyle(pane FocusPane) lipgloss.Style {
-	if m.focus == pane {
-		return m.styles.Focused
+func (m Model) renderDiff(width int) string {
+	paneWidth := max(14, width)
+	w := paneWidth - 2
+	h := m.diffHeight()
+	changes := m.visibleChanges()
+	title := " DIFF "
+	if len(changes) > 0 {
+		title = " " + truncateLeft(changes[m.selected].Path, max(8, w-32)) + " "
 	}
-	return m.styles.Blurred
+	typeLabel := ""
+	if m.diff.Binary {
+		typeLabel = dim.Render("Binary file  ")
+	}
+	if m.diff.Size > 0 {
+		typeLabel += dim.Render(formatSize(m.diff.Size) + "   │   ")
+	}
+	stats := typeLabel + newStyle.Render(fmt.Sprintf("+%d", m.diff.Counts.LinesNew)) + dim.Render(" • ") + modifiedStyle.Render(fmt.Sprintf("~%d", m.diff.Counts.LinesModified)) + dim.Render(" • ") + deletedStyle.Render(fmt.Sprintf("-%d", m.diff.Counts.LinesDeleted))
+	var rows []string
+	if m.diffLoading {
+		rows = []string{dim.Render("Loading selected diff…")}
+	} else if m.err != "" {
+		rows = []string{deletedStyle.Render(m.err)}
+	} else if m.diff.Binary {
+		rows = m.renderBinary(w)
+	} else if len(m.diff.Lines) == 0 {
+		rows = []string{dim.Render("No textual diff for this file.")}
+	} else if m.sideBySide {
+		rows = m.renderSideBySide(w, h)
+	} else {
+		rows = m.renderUnified(w, h)
+	}
+	for len(rows) < h {
+		rows = append(rows, strings.Repeat(" ", w))
+	}
+	framedRows := make([]string, 0, len(rows))
+	for _, row := range rows {
+		framedRows = append(framedRows, paneRow(row, paneWidth, border, false))
+	}
+	rows = append([]string{paneTop(strings.TrimSpace(title), stats, paneWidth, border, false)}, framedRows...)
+	rows = append(rows, paneBottom(paneWidth, border, false))
+	return strings.Join(rows, "\n")
 }
 
-func (m Model) shouldRenderIdleBrand() bool {
-	entry, ok := m.selected()
-	return ok && entry.Path == m.cwd && len(m.editorTabs) == 0 && m.filter == ""
-}
-
-func (m Model) renderIdleBrand(width, height int) string {
-	logo := []string{
-		"                  ▀▀       ",
-		"████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄",
-		"██ ██ ▄█▀██ ██▄██ ██  ▄█▀██",
-		"██ ██ ▀█▄██  ▀█▀  ██▄ ▀█▄██",
-	}
-	blockW := 29
-	lines := make([]string, 0, len(logo))
-	for _, line := range logo {
-		lines = append(lines, m.styles.Brand.Render(center(line, blockW)))
-	}
-	lines = append(lines, "")
-	lines = append(lines, m.styles.Highlight.Render(center("A microIDE in your terminal.", blockW)))
-	lines = append(lines, m.styles.Dim.Render(center("github.com/heidaraliy/navia", blockW)))
-	content := strings.Join(lines, "\n")
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
-}
-
-func (m Model) renderFooter() string {
-	status := displayText(m.statusMessage)
-	if status == "" {
-		return m.renderFooterKeyBar()
-	}
-	cmd := m.lastCommandHint
-	if cmd != "" {
-		status += " | " + m.styles.Command.Render(displayText(cmd))
-	}
-	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
-}
-
-func (m Model) renderFooterKeyBar() string {
-	parts := make([]string, 0, len(m.footerHints())*2+1)
-	for i, hint := range m.footerHints() {
-		if i > 0 {
-			parts = append(parts, m.styles.FooterSeparator.Render(" | "))
-		}
-		parts = append(parts, m.renderFooterHint(hint))
-	}
-	if m.lastCommandHint != "" {
-		parts = append(parts, m.styles.FooterSeparator.Render(" | "))
-		parts = append(parts, m.styles.Command.Render(displayText(m.lastCommandHint)))
-	}
-	status := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	return m.styles.Footer.Width(m.width).Render(clipStyled(status, max(0, m.width-2)))
-}
-
-func (m Model) renderFooterHint(hint footerHint) string {
-	text := m.footerKeyStyle(hint).Render(hint.key)
-	if hint.label != "" {
-		text += m.styles.FooterTab.Render(" " + hint.label)
-	}
-	return text
-}
-
-func (m Model) footerKeyStyle(hint footerHint) lipgloss.Style {
-	color := lipgloss.Color("229")
-	switch hint.key {
-	case "q", "Esc", ":q":
-		color = lipgloss.Color("203")
-	case "?", "auto", ":bl":
-		color = lipgloss.Color("186")
-	case "D", "R", "s", "u":
-		color = lipgloss.Color("176")
-	case "enter/l", "h", ":bn/:bp", "ctrl+o/i":
-		color = lipgloss.Color("111")
-	case "/", "e", ":w", "c", "p", "r", "gd/gr":
-		color = lipgloss.Color("114")
-	case "space":
-		color = lipgloss.Color("222")
-	}
-	return m.styles.FooterKey.Foreground(color)
-}
-
-func (m Model) footerHints() []footerHint {
-	if m.mode == ModeDiff || m.mode == ModeDiffCommit || m.mode == ModeDiffConfirmRestore || m.mode == ModeDiffConfirmRemove {
-		if m.diffPatchReview != nil {
-			return []footerHint{
-				{"q", "quit"},
-				{"Esc", "tree"},
-				{"?", "help"},
-				{"ctrl+u / ctrl+d", "scroll"},
-				{"r", "loaded"},
-			}
-		}
-		return []footerHint{
-			{"Esc", "tree"},
-			{"s", "stage"},
-			{"u", "unstage"},
-			{"R", "restore"},
-			{"D", "rm"},
-			{"c", "commit"},
-			{"p", "push"},
-			{"r", "refresh"},
-			{"auto", ""},
-		}
-	}
-	if m.activeBuffer() != nil && m.focus == FocusEditor {
-		hints := []footerHint{
-			{":w", "save"},
-			{":q", "close"},
-			{":bn/:bp", "tabs"},
-			{":bl", "list"},
-			{"ctrl+o/i", "jumps"},
-			{"gd/gr", ""},
-		}
-		if m.activeBuffer().IsMarkdown() {
-			hints = append([]footerHint{{"space", "task"}}, hints...)
-		}
-		return hints
-	}
-	return []footerHint{
-		{"q", "quit"},
-		{"?", "help"},
-		{"D", "diff"},
-		{"enter/l", "expand"},
-		{"h", "collapse"},
-		{"/", "search"},
-		{"e", "edit"},
-	}
-}
-
-func (m Model) renderModal() string {
-	switch m.mode {
-	case ModeConfirmDelete:
-		name := displayText(m.pendingDelete.Name)
-		return m.styles.Modal.Render("Safe delete `" + name + "`?\n\nPress y to move it to .navia-trash.\nPress Esc to cancel.")
-	case ModeRename:
-		return m.styles.Modal.Render("Rename\n\n" + m.safeInputView())
-	case ModeNewFile:
-		return m.styles.Modal.Render("Create new file\n\n" + m.safeInputView())
-	case ModeNewDir:
-		return m.styles.Modal.Render("Create new directory\n\n" + m.safeInputView())
-	case ModeGoToPath:
-		return m.styles.Modal.Render("Go to path\n\n" + m.safeInputView())
-	case ModeDiffCommit:
-		return m.styles.Modal.Render("Commit changes\n\n" + m.safeInputView())
-	case ModeDiffConfirmRestore:
-		return m.styles.Modal.Render("Restore `" + displayText(m.pendingDiffAction.Path) + "`?\n\nThis discards working tree changes or removes an untracked file.\nPress y to continue.\nPress Esc to cancel.")
-	case ModeDiffConfirmRemove:
-		return m.styles.Modal.Render("Remove `" + displayText(m.pendingDiffAction.Path) + "`?\n\nTracked files use git rm. Untracked files are deleted from disk.\nPress y to continue.\nPress Esc to cancel.")
-	default:
-		return ""
-	}
+func (m Model) renderBinary(width int) []string {
+	title := lipgloss.NewStyle().Bold(true).Foreground(accent).Render("◇  Binary file changed")
+	description := dim.Render("   This file is binary and cannot be meaningfully diffed.")
+	return []string{"", "", fit("   "+title, width), "", fit(description, width)}
 }
 
 func (m Model) renderHelp() string {
-	content := helpContent()
-	help := m.helpViewport
-	if help.Width == 0 {
-		help.Width = min(84, m.width-8)
-		help.Height = max(8, m.height-6)
+	bindings := [][2]string{
+		{"Search files", "/"},
+		{"Select file", "j/k or ↑/↓"},
+		{"Page file list", "J/K or ⇧↑/↓"},
+		{"Page file diff", "Ctrl-j/k, Ctrl-↑/↓, PgUp/Dn"},
+		{"Fullscreen file list", "F"},
+		{"Fullscreen file diff", "f"},
+		{"Toggle diff layout", "v"},
+		{"Open in Neovim", "Ctrl-o"},
+		{"Refresh", "r"},
+		{"Quit", "q"},
 	}
-	help.SetContent(content)
-	return m.styles.Modal.Width(min(90, m.width-6)).Height(min(m.height-4, max(10, help.Height+2))).Render(help.View())
+	const labelWidth = 24
+	bindings = append(bindings, [2]string{"Commit history", "c"}, [2]string{"Return to files", "Esc"})
+	rows := []string{lipgloss.NewStyle().Bold(true).Foreground(accent).Render("Navia keybinds"), ""}
+	for _, binding := range bindings {
+		label := fit(binding[0], labelWidth)
+		rows = append(rows, dim.Render(label)+lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Render(binding[1]))
+	}
+	rows = append(rows, "", dim.Render("Press ?, Esc, Enter, or q to close."))
+	modal := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder()).
+		BorderForeground(lipgloss.Color("39")).
+		Padding(1, 3).
+		Render(strings.Join(rows, "\n"))
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 }
 
-func helpContent() string {
-	sections := []string{
-		helpSection("Global", [][2]string{
-			{"q / ctrl+c", "quit"},
-			{"?", "toggle help"},
-			{"esc", "cancel current mode"},
-		}),
-		helpSection("Tree", [][2]string{
-			{"up/k, down/j", "move selection"},
-			{"pgup/ctrl+u, pgdown/ctrl+d", "page selection"},
-			{"enter/l", "expand directory or open search result"},
-			{"L / shift+enter", "make selected directory the root"},
-			{"backspace/h", "collapse or jump to parent"},
-			{"/", "recursive search"},
-			{"g", "go to path"},
-			{"e / c", "open selected file in Navia editor"},
-			{"D", "open diff mode"},
-		}),
-		helpSection("Diff", [][2]string{
-			{"up/k, down/j", "move changed file selection"},
-			{"ctrl+u / ctrl+d", "scroll diff"},
-			{"s / u", "stage / unstage selected file"},
-			{"R / D", "restore / remove selected file"},
-			{"c / p", "commit / push current branch"},
-			{"r / esc", "manual refresh / return to tree"},
-			{"auto", "refreshes while diff mode is open"},
-		}),
-		helpSection("File Operations", [][2]string{
-			{"r", "rename"},
-			{"n / N", "new file / directory"},
-			{"y / x / p", "copy / cut / paste"},
-			{"d", "safe delete"},
-		}),
-		helpSection("Search", [][2]string{
-			{"tab", "toggle file/text search"},
-			{"paste", "append flattened query text"},
-			{"enter", "run search"},
-			{"arrows/jk", "move submitted results"},
-			{"enter/l", "open submitted result"},
-			{"esc", "clear search"},
-		}),
-		helpSection("Editor Normal", [][2]string{
-			{"i/a/I/A/o/O", "enter insert"},
-			{"h/j/k/l, w/b/e", "move cursor"},
-			{"alt-left/right", "move by word"},
-			{"gg/G, :number", "jump"},
-			{"space", "toggle Markdown task checkbox"},
-			{"u / ctrl+r", "undo / redo"},
-			{"gd / gr", "definition / references"},
-		}),
-		helpSection("Editor Insert/Visual", [][2]string{
-			{"esc", "return to normal"},
-			{"v / V", "visual / visual line"},
-			{"alt-left/right", "move by word"},
-			{"y / d / p", "yank / delete / paste"},
-		}),
-		helpSection("Editor Tabs", [][2]string{
-			{":bn / :bp", "next / previous tab"},
-			{":bl", "list tabs"},
-			{":bd / :bd!", "close tab"},
-			{"gt / gT", "next / previous tab"},
-		}),
-		helpSection("Windows And History", [][2]string{
-			{"ctrl+w h/l", "focus tree / editor"},
-			{"ctrl+w w", "focus tree"},
-			{"ctrl+w o", "toggle editor-only view"},
-			{"ctrl+o / ctrl+i", "jump back / forward"},
-		}),
-		helpSection("Editor Commands", [][2]string{
-			{":w / :w!", "save / force save"},
-			{":q / :q!", "close / force close"},
-			{":wq", "save and close"},
-			{":qa / :qa!", "quit all / force quit"},
-			{":e path", "open file"},
-		}),
+func (m Model) renderUnified(width, height int) []string {
+	end := min(len(m.diff.Lines), m.diffTop+height)
+	rows := make([]string, 0, end-m.diffTop)
+	for _, line := range m.diff.Lines[m.diffTop:end] {
+		marker := " "
+		if line.Kind == gitview.Added {
+			marker = newStyle.Render("+")
+		}
+		if line.Kind == gitview.Removed {
+			marker = deletedStyle.Render("-")
+		}
+		gutter := fmt.Sprintf("%s %4s %4s │ ", marker, number(line.Old), number(line.New))
+		text := line.Text
+		if line.Kind == gitview.Hunk || line.Kind == gitview.Header {
+			text = textsafe.Content(text)
+		}
+		if line.Kind == gitview.Added || line.Kind == gitview.Removed || line.Kind == gitview.Context {
+			text = m.syntax.HighlightLine(m.diff.Path, text)
+		}
+		row := fit(gutter+text, width)
+		switch line.Kind {
+		case gitview.Added:
+			row = addRow.Width(width).Render(row)
+		case gitview.Removed:
+			row = removeRow.Width(width).Render(row)
+		case gitview.Hunk:
+			row = hunkStyle.Width(width).Render(row)
+		case gitview.Header:
+			row = dim.Width(width).Render(row)
+		}
+		rows = append(rows, row)
 	}
-	return "Navia\n\n" + strings.Join(sections, "\n\n")
+	return rows
 }
 
-func helpSection(title string, rows [][2]string) string {
-	lines := []string{title}
-	for _, row := range rows {
-		lines = append(lines, fmt.Sprintf("  %-16s %s", row[0], row[1]))
+func (m Model) renderSideBySide(width, height int) []string {
+	leftW := max(8, (width-1)/2)
+	rightW := max(8, width-leftW-1)
+	end := min(len(m.diff.Side), m.diffTop+height)
+	rows := make([]string, 0, end-m.diffTop)
+	for _, line := range m.diff.Side[m.diffTop:end] {
+		old, new := line.OldText, line.NewText
+		if line.Kind == gitview.Hunk || line.Kind == gitview.Header {
+			old, new = textsafe.Content(old), textsafe.Content(new)
+		}
+		if old != "" && (line.Kind == gitview.Context || line.Kind == gitview.Removed) {
+			old = m.syntax.HighlightLine(m.diff.Path, old)
+		}
+		if new != "" && (line.Kind == gitview.Context || line.Kind == gitview.Added || line.Kind == gitview.Removed) {
+			new = m.syntax.HighlightLine(m.diff.Path, new)
+		}
+		left := fit(fmt.Sprintf("%5s │ %s", number(line.Old), old), leftW)
+		right := fit(fmt.Sprintf("%5s │ %s", number(line.New), new), rightW)
+		if line.OldText != "" && line.Kind == gitview.Removed {
+			left = removeRow.Width(leftW).Render(left)
+		}
+		if line.NewText != "" && (line.Kind == gitview.Added || line.Kind == gitview.Removed) {
+			right = addRow.Width(rightW).Render(right)
+		}
+		rows = append(rows, left+dim.Render("│")+right)
 	}
-	return strings.Join(lines, "\n")
+	return rows
 }
 
-func (m Model) listHeight() int {
-	height := m.height - m.topHeight() - 3
-	if height < 8 {
-		height = 8
-	}
-	return height
-}
-
-func (m Model) topHeight() int {
-	return 2
-}
-
-func truncate(s string, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
+func truncateLeft(value string, width int) string {
+	if termansi.StringWidth(value) <= width {
+		return value
 	}
 	if width <= 1 {
-		return string(runes[:width])
+		return "…"
 	}
-	return string(runes[:width-1]) + "…"
+	runes := []rune(value)
+	for len(runes) > 0 && termansi.StringWidth("…"+string(runes)) > width {
+		runes = runes[1:]
+	}
+	return "…" + string(runes)
 }
-
-func clip(s string, width int) string {
-	if width <= 0 {
+func fit(value string, width int) string {
+	value = termansi.Truncate(value, width, "")
+	return value + strings.Repeat(" ", max(0, width-termansi.StringWidth(value)))
+}
+func number(n int) string {
+	if n == 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
-		return s
+	return fmt.Sprint(n)
+}
+
+func headerLine(left, right string, width int) string {
+	if right == "" {
+		return fit(left, width)
 	}
-	return string(runes[:width])
+	rightWidth := termansi.StringWidth(right)
+	left = termansi.Truncate(left, max(0, width-rightWidth-1), "")
+	gap := max(1, width-termansi.StringWidth(left)-rightWidth)
+	return fit(left+strings.Repeat(" ", gap)+right, width)
 }
 
-func clipStyled(s string, width int) string {
-	if width <= 0 {
-		return ""
+func paneTop(title, right string, width int, frame lipgloss.Style, heavy bool) string {
+	leftCorner, line, rightCorner := "╭", "─", "╮"
+	if heavy {
+		leftCorner, line, rightCorner = "┏", "━", "┓"
 	}
-	return termansi.Truncate(s, width, "")
-}
-
-func displayText(s string) string {
-	return textsafe.Display(s)
-}
-
-func (m Model) safeInputView() string {
-	return m.input.PromptStyle.Render(m.input.Prompt) + displayText(m.input.Value())
-}
-
-func center(s string, width int) string {
-	if lipgloss.Width(s) >= width {
-		return truncate(s, width)
+	inner := max(0, width-2)
+	left := line + " " + lipgloss.NewStyle().Bold(true).Foreground(accent).Render(title) + " "
+	rightText := ""
+	if right != "" {
+		rightText = " " + right + " "
 	}
-	left := (width - lipgloss.Width(s)) / 2
-	return strings.Repeat(" ", left) + s
+	reserved := termansi.StringWidth(rightText)
+	if right != "" {
+		reserved++
+	}
+	left = termansi.Truncate(left, max(0, inner-reserved), "")
+	fill := strings.Repeat(line, max(0, inner-termansi.StringWidth(left)-reserved))
+	ending := ""
+	if right != "" {
+		ending = rightText + frame.Render(line)
+	}
+	return frame.Render(leftCorner) + frame.Render(left) + frame.Render(fill) + ending + frame.Render(rightCorner)
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func paneRow(content string, width int, frame lipgloss.Style, heavy bool) string {
+	vertical := "│"
+	if heavy {
+		vertical = "┃"
 	}
-	return b
+	return frame.Render(vertical) + fit(content, max(0, width-2)) + frame.Render(vertical)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func paneRule(width int, frame lipgloss.Style, heavy bool) string {
+	left, line, right := "├", "─", "┤"
+	if heavy {
+		left, line, right = "┣", "━", "┫"
 	}
-	return b
+	return frame.Render(left + strings.Repeat(line, max(0, width-2)) + right)
+}
+
+func paneBottom(width int, frame lipgloss.Style, heavy bool) string {
+	left, line, right := "╰", "─", "╯"
+	if heavy {
+		left, line, right = "┗", "━", "┛"
+	}
+	return frame.Render(left + strings.Repeat(line, max(0, width-2)) + right)
+}
+
+func comma(value int) string {
+	result := strconv.Itoa(value)
+	for i := len(result) - 3; i > 0; i -= 3 {
+		result = result[:i] + "," + result[i:]
+	}
+	return result
+}
+
+func formatSize(bytes int64) string {
+	const (
+		kilobyte = 1024
+		megabyte = 1024 * kilobyte
+		gigabyte = 1024 * megabyte
+	)
+	switch {
+	case bytes >= gigabyte:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/gigabyte)
+	case bytes >= megabyte:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/megabyte)
+	case bytes >= kilobyte:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/kilobyte)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
