@@ -1,4 +1,0 @@
-interface:
-  display_name: "Navia Render Performance"
-  short_description: "Keep TUI rendering bounded and lean"
-  default_prompt: "Use $navia-render-performance-engineer to review Navia TUI/editor rendering for bounded per-frame work and allocation discipline."
