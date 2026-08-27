@@ -2,7 +2,6 @@ package config
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,45 +11,13 @@ import (
 type Config struct {
 	ShowHidden      bool
 	Editor          string
-	SafeDelete      bool
 	SortDirsFirst   bool
 	PreviewMaxBytes int64
-	EditorMaxBytes  int64
-	EnableLSP       bool
-	GoplsCommand    string
 	Theme           string
 	IgnoreNames     []string
 }
 
 const MaxPreviewBytes int64 = 4 * 1024 * 1024
-
-func SaveTheme(theme string) error {
-	path := Path()
-	if path == "" {
-		return fmt.Errorf("could not resolve config path")
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	var lines []string
-	if data, err := os.ReadFile(path); err == nil {
-		lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-	}
-	found := false
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "theme") {
-			if key, _, ok := strings.Cut(trimmed, "="); ok && strings.TrimSpace(key) == "theme" {
-				lines[i] = `theme = "` + theme + `"`
-				found = true
-			}
-		}
-	}
-	if !found {
-		lines = append(lines, `theme = "`+theme+`"`)
-	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
-}
 
 func Default() Config {
 	editor := os.Getenv("VISUAL")
@@ -63,12 +30,8 @@ func Default() Config {
 	return Config{
 		ShowHidden:      false,
 		Editor:          editor,
-		SafeDelete:      true,
 		SortDirsFirst:   true,
 		PreviewMaxBytes: 256 * 1024,
-		EditorMaxBytes:  1024 * 1024,
-		EnableLSP:       true,
-		GoplsCommand:    "gopls",
 		Theme:           "navia",
 		IgnoreNames:     []string{".git", "node_modules", ".next", "dist", "build", "target", ".cache"},
 	}
@@ -118,8 +81,6 @@ func Load() (Config, string) {
 			if value != "" {
 				cfg.Editor = value
 			}
-		case "safe_delete":
-			cfg.SafeDelete = parseBool(value, cfg.SafeDelete)
 		case "sort_dirs_first":
 			cfg.SortDirsFirst = parseBool(value, cfg.SortDirsFirst)
 		case "preview_max_bytes":
@@ -128,16 +89,6 @@ func Load() (Config, string) {
 					n = MaxPreviewBytes
 				}
 				cfg.PreviewMaxBytes = n
-			}
-		case "editor_max_bytes":
-			if n, err := strconv.ParseInt(value, 10, 64); err == nil && n > 0 {
-				cfg.EditorMaxBytes = n
-			}
-		case "enable_lsp":
-			cfg.EnableLSP = parseBool(value, cfg.EnableLSP)
-		case "gopls_command":
-			if value != "" {
-				cfg.GoplsCommand = value
 			}
 		case "theme":
 			if value != "" {

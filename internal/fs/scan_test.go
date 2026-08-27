@@ -58,83 +58,16 @@ func TestShouldSkipNameHonorsHiddenAndIgnoredNames(t *testing.T) {
 	}
 }
 
-func TestSafeDeleteMovesIntoNaviaTrash(t *testing.T) {
-	dir := t.TempDir()
-	dataHome := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", dataHome)
-	path := filepath.Join(dir, "test.txt")
-	must(t, os.WriteFile(path, []byte("hello"), 0o644))
-
-	target, err := SafeDelete(path, dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("source still exists or stat failed unexpectedly: %v", err)
-	}
-	if _, err := os.Stat(target); err != nil {
-		t.Fatalf("target missing: %v", err)
-	}
-	wantPrefix := filepath.Join(dataHome, "navia", "trash")
-	if !IsSubpath(wantPrefix, target) {
-		t.Fatalf("expected global trash target under %s, got %s", wantPrefix, target)
-	}
-}
-
-func TestGlobalTrashDirUsesHomeWhenXDGDataHomeIsUnset(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "")
-	got, err := GlobalTrashDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(got, filepath.Join(".local", "share", "navia", "trash")) {
-		t.Fatalf("GlobalTrashDir = %q", got)
-	}
-}
-
-func TestSafeDeleteErrorsForMissingPath(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	if _, err := SafeDelete(filepath.Join(t.TempDir(), "missing"), ""); err == nil {
-		t.Fatal("SafeDelete missing path succeeded")
-	}
-}
-
-func TestSafeDeleteRejectsOutsideRoot(t *testing.T) {
+func TestFileSearchMatchesPartialTokensAndExtensions(t *testing.T) {
 	root := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "outside.txt")
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	must(t, os.WriteFile(outside, []byte("do not move"), 0o644))
-
-	if _, err := SafeDelete(outside, root); err == nil {
-		t.Fatal("SafeDelete allowed outside-root path")
-	}
-	if data, err := os.ReadFile(outside); err != nil || string(data) != "do not move" {
-		t.Fatalf("outside file changed after rejected delete: %q %v", string(data), err)
-	}
-}
-
-func TestCopyAndMovePath(t *testing.T) {
-	dir := t.TempDir()
-	src := filepath.Join(dir, "a.txt")
-	copyDst := filepath.Join(dir, "b.txt")
-	moveDst := filepath.Join(dir, "c.txt")
-	must(t, os.WriteFile(src, []byte("hello"), 0o644))
-
-	if err := CopyPath(src, copyDst); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(copyDst)
-	if err != nil || string(data) != "hello" {
-		t.Fatalf("bad copy: %q %v", string(data), err)
-	}
-	if err := MovePath(copyDst, moveDst); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(copyDst); !os.IsNotExist(err) {
-		t.Fatalf("copy source still exists or stat failed unexpectedly: %v", err)
-	}
-	if _, err := os.Stat(moveDst); err != nil {
-		t.Fatalf("move target missing: %v", err)
+	must(t, os.MkdirAll(filepath.Join(root, "cpp", "core"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "cpp", "core", "PhysicsSystem.cpp"), []byte("x"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "cpp", "core", "PhysicsSystem.h"), []byte("x"), 0o644))
+	for _, query := range []string{"Physics .cpp", "phys sys cpp", "phsys .cpp"} {
+		matches, err := SearchFiles(root, query, ScanOptions{})
+		if err != nil || len(matches) == 0 || matches[0].Entry.Name != "PhysicsSystem.cpp" {
+			t.Fatalf("query %q = %#v, %v", query, matches, err)
+		}
 	}
 }
 

@@ -27,7 +27,7 @@ Run `go fmt ./...` before submitting Go changes.
 
 ## Safety Expectations
 
-Changes that create, rename, copy, move, delete, search, or preview user files need focused tests. Use `t.TempDir()` and avoid relying on local machine state. Safe delete should remain the default behavior unless a proposal explicitly changes that contract.
+Changes that scan, search, or preview user files need focused tests. Use `t.TempDir()` and avoid relying on local machine state. Navia is read-only; filesystem or Git mutation requires an explicit product-scope proposal before implementation.
 
 ## Agent Workflow
 

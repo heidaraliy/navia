@@ -18,4 +18,4 @@ Include:
 
 ## Safety-Sensitive Areas
 
-The highest-risk areas are filesystem mutation, path boundary checks, editor launching, config parsing, and future automation that may run external commands.
+The highest-risk areas are path boundary checks, bounded file previews, external-editor launching, Git subprocesses, config parsing, and future automation that may run external commands. Navia does not provide filesystem or Git mutation commands.
