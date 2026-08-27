@@ -58,6 +58,19 @@ func TestShouldSkipNameHonorsHiddenAndIgnoredNames(t *testing.T) {
 	}
 }
 
+func TestFileSearchMatchesPartialTokensAndExtensions(t *testing.T) {
+	root := t.TempDir()
+	must(t, os.MkdirAll(filepath.Join(root, "cpp", "core"), 0o755))
+	must(t, os.WriteFile(filepath.Join(root, "cpp", "core", "PhysicsSystem.cpp"), []byte("x"), 0o644))
+	must(t, os.WriteFile(filepath.Join(root, "cpp", "core", "PhysicsSystem.h"), []byte("x"), 0o644))
+	for _, query := range []string{"Physics .cpp", "phys sys cpp", "phsys .cpp"} {
+		matches, err := SearchFiles(root, query, ScanOptions{})
+		if err != nil || len(matches) == 0 || matches[0].Entry.Name != "PhysicsSystem.cpp" {
+			t.Fatalf("query %q = %#v, %v", query, matches, err)
+		}
+	}
+}
+
 func TestPreviewHonorsByteLimit(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "big.txt")

@@ -236,6 +236,9 @@ func (m Model) updateNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+u":
 			m.navQuery = ""
 			return m, nil
+		case " ":
+			m.navQuery += " "
+			return m, nil
 		}
 		if msg.Type == tea.KeyRunes {
 			m.navQuery += string(msg.Runes)
@@ -257,9 +260,11 @@ func (m Model) updateNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.scrollNavPreview(max(1, m.diffHeight()-1))
 	case "ctrl+k", "ctrl+up", "pgup":
 		m.scrollNavPreview(-max(1, m.diffHeight()-1))
-	case "enter", "l":
+	case "enter":
 		return m.openNavSelection()
-	case "h", "backspace":
+	case "right", "l":
+		return m.expandNav()
+	case "left", "h", "backspace":
 		return m.collapseNav()
 	case "/":
 		m.navSearching = true
@@ -294,6 +299,16 @@ func (m Model) updateNavKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) expandNav() (tea.Model, tea.Cmd) {
+	row, ok := m.selectedNav()
+	if !ok || !row.entry.IsDir || m.expanded[row.entry.Path] {
+		return *m, nil
+	}
+	m.expanded[row.entry.Path] = true
+	_ = m.rebuildNav(row.entry.Path)
+	return *m, m.queueNavPreview()
 }
 
 func (m *Model) openNavSelection() (tea.Model, tea.Cmd) {
@@ -510,7 +525,7 @@ func (m Model) renderNavPreview(width int) string {
 }
 
 func (m Model) renderNavHelp() string {
-	bindings := [][2]string{{"Search files or text", "/ then Tab"}, {"Select file", "j/k or ↑/↓"}, {"Page file list", "J/K or ⇧↑/↓"}, {"Page preview", "Ctrl-j/k or PgUp/Dn"}, {"Expand / open in editor", "Enter"}, {"Collapse / parent", "h or Backspace"}, {"Open Git diff", "D"}, {"Fullscreen panes", "F / f"}, {"Quit", "q"}}
+	bindings := [][2]string{{"Search files or text", "/ then Tab"}, {"Select file", "j/k or ↑/↓"}, {"Page file list", "J/K or ⇧↑/↓"}, {"Page preview", "Ctrl-j/k or PgUp/Dn"}, {"Expand directory", "l or →"}, {"Collapse / parent", "h or ←"}, {"Open file in editor", "Enter"}, {"Open Git diff", "D"}, {"Fullscreen panes", "F / f"}, {"Quit", "q"}}
 	rows := []string{lipgloss.NewStyle().Bold(true).Foreground(accent).Render("Navia keybinds"), ""}
 	for _, b := range bindings {
 		rows = append(rows, dim.Render(fit(b[0], 27))+b[1])
