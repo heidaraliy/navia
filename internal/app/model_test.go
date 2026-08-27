@@ -100,7 +100,7 @@ func TestArrowKeysExpandAndCollapseWithoutOpeningFiles(t *testing.T) {
 	}
 }
 
-func TestDiffRowsUseColoredGuttersWithoutFullRowBackgrounds(t *testing.T) {
+func TestDiffRowsRetainSyntaxColorsAndContinuousBackgrounds(t *testing.T) {
 	m := Model{
 		diff: gitview.FileDiff{
 			Path:  "deleted.go",
@@ -113,11 +113,15 @@ func TestDiffRowsUseColoredGuttersWithoutFullRowBackgrounds(t *testing.T) {
 		"unified": strings.Join(m.renderUnified(100, 10), "\n"),
 		"split":   strings.Join(m.renderSideBySide(100, 10), "\n"),
 	} {
-		if strings.Contains(rendered, "\x1b[48;") {
-			t.Fatalf("%s diff applies a full-row background: %q", name, rendered)
+		if !strings.HasPrefix(rendered, removedBackground) {
+			t.Fatalf("%s diff is missing its deletion background: %q", name, rendered)
 		}
 		if !strings.Contains(rendered, "-") {
 			t.Fatalf("%s diff is missing its deletion gutter: %q", name, rendered)
+		}
+		unpaintedResets := strings.ReplaceAll(rendered, "\x1b[0m"+removedBackground, "")
+		if strings.Count(unpaintedResets, "\x1b[0m") != 1 {
+			t.Fatalf("%s syntax reset interrupts its deletion background: %q", name, rendered)
 		}
 	}
 }
