@@ -37,6 +37,11 @@ func (m Model) View() string {
 	if m.width == 0 {
 		return "Navia is opening…"
 	}
+	// Keep the final terminal column untouched. Some terminals eagerly wrap a
+	// glyph written in that column, which makes vertical pane borders appear at
+	// progressively shifting positions.
+	m.width = max(1, m.width-1)
+	m.clampLayout()
 	if m.mode == 'n' {
 		return m.renderNavigator()
 	}
