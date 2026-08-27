@@ -3,189 +3,95 @@ package app
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heidaraliy/navia/internal/config"
-	"github.com/heidaraliy/navia/internal/editor"
 	navfs "github.com/heidaraliy/navia/internal/fs"
-	"github.com/heidaraliy/navia/internal/git"
+	"github.com/heidaraliy/navia/internal/gitview"
 	"github.com/heidaraliy/navia/internal/syntax"
-	"github.com/heidaraliy/navia/internal/ui"
+	"github.com/heidaraliy/navia/internal/textsafe"
 )
 
-type Mode int
+const previewLimit = 1024 * 1024
 
-const (
-	ModeNormal Mode = iota
-	ModeFilter
-	ModeRename
-	ModeNewFile
-	ModeNewDir
-	ModeGoToPath
-	ModeConfirmDelete
-	ModeHelp
-	ModeDiff
-	ModeDiffCommit
-	ModeDiffConfirmRestore
-	ModeDiffConfirmRemove
-)
-
-type SearchMode int
-
-const (
-	SearchFiles SearchMode = iota
-	SearchText
-)
-
-type StartupSearch struct {
-	Mode  SearchMode
-	Query string
-}
-
-type StartupPatchReview struct {
-	Label string
-	Data  []byte
-}
-
-type FocusPane int
-
-const (
-	FocusTree FocusPane = iota
-	FocusEditor
-)
-
-type ClipboardOperation int
-
-const (
-	ClipboardNone ClipboardOperation = iota
-	ClipboardCopy
-	ClipboardCut
-)
-
-type ClipboardState struct {
-	Path     string
-	Op       ClipboardOperation
-	IsDir    bool
-	BaseName string
-}
-
-type TreeRow struct {
-	Entry    navfs.FileEntry
-	Depth    int
-	Expanded bool
-}
-
-type ResultRow struct {
-	Entry   navfs.FileEntry
-	Depth   int
-	Line    int
-	Column  int
-	Score   int
-	Snippet string
-}
-
-type editorJump struct {
-	Path string
-	Row  int
-	Col  int
-}
-
-type previewLoadedMsg struct {
+type statusMsg struct {
 	id      int
-	path    string
-	preview navfs.Preview
-	content string
+	changes []gitview.Change
+	err     error
+}
+type summaryMsg struct {
+	id     int
+	counts gitview.Counts
+	err    error
+}
+type diffMsg struct {
+	id    int
+	index int
+	diff  gitview.FileDiff
+	err   error
+}
+type editorMsg struct{ err error }
+type searchMsg struct {
+	id      int
+	matches map[string]bool
+	err     error
 }
 
 type Model struct {
-	cwd                  string
-	entries              []navfs.FileEntry
-	treeRows             []TreeRow
-	treeRowByPath        map[string]TreeRow
-	rows                 []ResultRow
-	recursiveRows        []ResultRow
-	recursiveRoot        string
-	selectedIndex        int
-	filter               string
-	executedSearchQuery  string
-	searchRequestID      int
-	searchRunning        bool
-	searchMode           SearchMode
-	mode                 Mode
-	helpReturnMode       Mode
-	clipboard            ClipboardState
-	preview              navfs.Preview
-	previewViewport      viewport.Model
-	previewRequestID     int
-	diffViewport         viewport.Model
-	diffChanges          []git.Change
-	diffSummary          git.Summary
-	diffPatchReview      *git.PatchReview
-	diffPatchLabel       string
-	diffSelectedIndex    int
-	diffRefreshSignature string
-	diffPreviewRequestID int
-	pendingDiffAction    git.Change
-	helpViewport         viewport.Model
-	editorTabs           []*editor.Buffer
-	activeTab            int
-	jumpBack             []editorJump
-	jumpForward          []editorJump
-	treeHidden           bool
-	focus                FocusPane
-	windowPending        bool
-	input                textinput.Model
-	lastCommandHint      string
-	statusMessage        string
-	statusRevision       int
-	treeRefreshSignature string
-	cfg                  config.Config
-	gitRoot              string
-	width                int
-	height               int
-	styles               ui.Styles
-	syntax               syntax.Renderer
-	pendingDelete        navfs.FileEntry
-	expandedDirs         map[string]bool
+	mode                        byte
+	browseRoot                  string
+	cfg                         config.Config
+	navRows                     []navRow
+	navSelected, navTop         int
+	navPreview                  navfs.Preview
+	navPreviewLines             []string
+	navPreviewTop               int
+	navPreviewID                int
+	expanded                    map[string]bool
+	navSearching                bool
+	navSearchText               bool
+	navQuery                    string
+	navSearchID                 int
+	navSearchLoading            bool
+	historyOpen                 bool
+	history                     []gitview.Commit
+	historySelected             int
+	historyOffset               int
+	historyLoading              bool
+	historyHasMore              bool
+	historyID                   int
+	diffRef                     string
+	diffLabel                   string
+	root                        string
+	width, height               int
+	leftWidth                   int
+	dragging                    bool
+	changes                     []gitview.Change
+	selected, listTop, diffTop  int
+	diff                        gitview.FileDiff
+	diffLoading, summaryLoading bool
+	requestID                   int
+	statusRequestID             int
+	summaryRequestID            int
+	counts                      gitview.Counts
+	err                         string
+	status                      string
+	sideBySide                  bool
+	searching                   bool
+	searchQuery                 string
+	searchLoading               bool
+	searchID                    int
+	contentMatches              map[string]bool
+	help                        bool
+	fullscreen                  byte
+	syntax                      syntax.Renderer
+	editor                      string
 }
 
-const (
-	previewRenderMaxLines        = 400
-	previewRenderOverscanScreens = 4
-	previewRenderMaxLineRunes    = 2000
-)
-
-func New(start string, cfg config.Config) (Model, error) {
-	cwd, err := navfs.ResolveDir(start)
-	if err != nil {
-		return Model{}, err
-	}
-	input := textinput.New()
-	input.CharLimit = 512
-	input.Prompt = "> "
-	m := Model{
-		cwd:             cwd,
-		cfg:             cfg,
-		styles:          ui.NewStyles(),
-		syntax:          syntax.New(cfg.Theme),
-		input:           input,
-		previewViewport: viewport.New(40, 10),
-		diffViewport:    viewport.New(67, 10),
-		helpViewport:    viewport.New(80, 20),
-		expandedDirs:    map[string]bool{cwd: true},
-	}
-	m.gitRoot = git.FindRoot(cwd)
-	if err := m.refresh(); err != nil {
-		return Model{}, err
-	}
-	return m, nil
-}
-
-func NewFromPath(start string, cfg config.Config) (Model, error) {
+func New(start string, cfg config.Config, diffMode bool) (Model, error) {
 	abs, err := filepath.Abs(start)
 	if err != nil {
 		return Model{}, err
@@ -194,468 +100,508 @@ func NewFromPath(start string, cfg config.Config) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
-	if info.IsDir() {
-		return New(abs, cfg)
+	selectedPath := ""
+	if !info.IsDir() {
+		selectedPath, abs = abs, filepath.Dir(abs)
 	}
-	return NewWithFile(abs, cfg)
-}
-
-func NewWithFile(path string, cfg config.Config) (Model, error) {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return Model{}, err
+	root, _ := gitview.Root(abs)
+	if diffMode && root == "" {
+		return Model{}, fmt.Errorf("diff mode requires a Git repository")
 	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return Model{}, err
+	editor := cfg.Editor
+	if editor == "" {
+		editor = "nvim"
 	}
-	if info.IsDir() {
-		return New(abs, cfg)
-	}
-	m, err := New(filepath.Dir(abs), cfg)
-	if err != nil {
-		return Model{}, err
-	}
-	m.StartFile(abs)
-	return m, nil
-}
-
-func NewWithSearch(start string, cfg config.Config, search StartupSearch) (Model, error) {
-	m, err := New(start, cfg)
-	if err != nil {
-		return Model{}, err
-	}
-	m.StartSearch(search)
-	return m, nil
-}
-
-func NewWithDiff(start string, cfg config.Config) (Model, error) {
-	m, err := New(start, cfg)
-	if err != nil {
-		return Model{}, err
-	}
-	m.StartDiff()
-	return m, nil
-}
-
-func NewWithPatchReview(start string, cfg config.Config, patch StartupPatchReview) (Model, error) {
-	m, err := New(start, cfg)
-	if err != nil {
-		return Model{}, err
-	}
-	if err := m.StartPatchReview(patch); err != nil {
+	m := Model{mode: 'n', browseRoot: abs, root: root, cfg: cfg, expanded: map[string]bool{abs: true}, syntax: syntax.New(cfg.Theme), editor: editor, historyHasMore: true}
+	if diffMode {
+		m.mode, m.summaryLoading = 'd', true
+	} else if err := m.rebuildNav(selectedPath); err != nil {
 		return Model{}, err
 	}
 	return m, nil
 }
 
 func (m Model) Init() tea.Cmd {
-	return autoRefreshCmd()
+	if m.mode == 'd' {
+		return loadStatusRef(m.root, m.diffRef, 0)
+	}
+	return m.queueNavPreview()
 }
 
-func (m *Model) SetStatus(msg string) {
-	m.statusMessage = msg
-}
+func (m *Model) SetStatus(value string) { m.status = value }
 
-func (m *Model) StartSearch(search StartupSearch) {
-	query := strings.TrimSpace(search.Query)
-	if query == "" {
-		return
-	}
-	m.searchMode = search.Mode
-	m.filter = query
-	m.executedSearchQuery = query
-	m.mode = ModeNormal
-	m.selectedIndex = 0
-	m.applyFilter()
-	m.clampSelection()
-	m.refreshPreview()
+func loadStatus(root string, id int) tea.Cmd {
+	return func() tea.Msg { changes, err := gitview.Status(root); return statusMsg{id, changes, err} }
 }
-
-func (m *Model) StartFile(path string) {
-	if path == "" {
-		return
+func loadStatusRef(root, ref string, id int) tea.Cmd {
+	if ref == "" {
+		return loadStatus(root, id)
 	}
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(m.cwd, path)
+	return func() tea.Msg { changes, err := gitview.StatusCommit(root, ref); return statusMsg{id, changes, err} }
+}
+func loadSummary(root string, changes []gitview.Change, id int) tea.Cmd {
+	return func() tea.Msg { counts, err := gitview.Aggregate(root, changes); return summaryMsg{id, counts, err} }
+}
+func loadSummaryRef(root, ref string, changes []gitview.Change, id int) tea.Cmd {
+	if ref == "" {
+		return loadSummary(root, changes, id)
 	}
-	path = filepath.Clean(path)
-	m.mode = ModeNormal
-	m.filter = ""
-	m.executedSearchQuery = ""
-	m.searchRunning = false
-	m.selectPath(path)
-	m.refreshPreview()
-	_ = m.openEditorTab(path)
-	if buf := m.activeBuffer(); buf != nil {
-		buf.Mode = editor.Normal
+	return func() tea.Msg {
+		counts, err := gitview.AggregateCommit(root, ref, changes)
+		return summaryMsg{id, counts, err}
 	}
 }
-
-func (m *Model) StartDiff() {
-	m.enterDiffMode()
-}
-
-func (m *Model) StartPatchReview(patch StartupPatchReview) error {
-	review, err := git.ParsePatchReview(patch.Data)
-	if err != nil {
-		return err
-	}
-	m.mode = ModeDiff
-	m.focus = FocusTree
-	m.diffPatchReview = &review
-	m.diffPatchLabel = strings.TrimSpace(patch.Label)
-	if m.diffPatchLabel == "" {
-		m.diffPatchLabel = "Patch review"
-	}
-	m.diffChanges = review.Changes
-	m.diffSummary = review.Summary
-	m.diffSelectedIndex = 0
-	m.statusMessage = "Patch review."
-	m.clampDiffSelection()
-	m.refreshDiffPreview()
-	return nil
-}
-
-func (m *Model) refresh() error {
-	if err := m.refreshTreeData(); err != nil {
-		return err
-	}
-	m.refreshPreview()
-	return nil
-}
-
-func (m *Model) refreshTreeData() error {
-	entries, err := navfs.ScanDir(m.cwd, m.scanOptions())
-	if err != nil {
-		return err
-	}
-	m.entries = entries
-	m.treeRows = m.buildTreeRows()
-	m.rebuildTreeRowIndex()
-	m.applyFilter()
-	m.clampSelection()
-	m.gitRoot = git.FindRoot(m.cwd)
-	m.treeRefreshSignature = m.currentTreeSignature()
-	return nil
-}
-
-func (m *Model) applyFilter() {
-	if strings.TrimSpace(m.filter) == "" {
-		m.rows = m.treeRowsToResultRows(m.treeRows)
-		return
-	}
-	if m.filter != m.executedSearchQuery {
-		m.rows = nil
-		m.statusMessage = "Press Enter to run recursive search."
-		return
-	}
-	if m.searchMode == SearchText {
-		m.applyTextSearch()
-	} else {
-		m.applyFileSearch()
+func loadDiff(root string, change gitview.Change, id, index int) tea.Cmd {
+	return func() tea.Msg {
+		diff, err := gitview.Diff(root, change, previewLimit)
+		return diffMsg{id, index, diff, err}
 	}
 }
-
-func (m Model) hasSubmittedSearch() bool {
-	query := strings.TrimSpace(m.filter)
-	return query != "" && query == m.executedSearchQuery && !m.searchRunning
+func loadDiffRef(root, ref string, change gitview.Change, id, index int) tea.Cmd {
+	if ref == "" {
+		return loadDiff(root, change, id, index)
+	}
+	return func() tea.Msg {
+		diff, err := gitview.DiffCommit(root, ref, change, previewLimit)
+		return diffMsg{id, index, diff, err}
+	}
 }
-
-func (m *Model) applyFileSearch() {
-	needle := strings.ToLower(strings.TrimSpace(m.filter))
-	if needle == "" {
-		m.rows = m.treeRowsToResultRows(m.treeRows)
-		return
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, handled := m.updateNavigatorMessage(msg); handled {
+		return next, cmd
 	}
-	if len(needle) < 2 {
-		m.rows = nil
-		m.statusMessage = "Type at least 2 characters for recursive file search."
-		return
-	}
-	m.ensureRecursiveRows()
-	m.rows = m.rows[:0]
-	for _, row := range m.recursiveRows {
-		if navfs.MatchFileQuery(m.cwd, row.Entry.Path, needle) {
-			m.rows = append(m.rows, row)
-			if len(m.rows) >= navfs.MaxSearchResults {
-				m.statusMessage = fmt.Sprintf("Showing first %d file matches.", navfs.MaxSearchResults)
-				return
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.clampLayout()
+	case statusMsg:
+		if msg.id != m.statusRequestID {
+			return m, nil
+		}
+		m.status = ""
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		selectedPath := m.selectedPath()
+		m.changes = msg.changes
+		m.selected = indexForPath(m.changes, selectedPath, m.selected)
+		m.clampSelection()
+		m.summaryLoading = true
+		m.summaryRequestID++
+		if len(m.changes) == 0 {
+			m.diff = gitview.FileDiff{}
+			m.diffLoading = false
+			return m, loadSummaryRef(m.root, m.diffRef, m.changes, m.summaryRequestID)
+		}
+		return m, tea.Batch(m.queueDiff(), loadSummaryRef(m.root, m.diffRef, m.changes, m.summaryRequestID))
+	case summaryMsg:
+		if msg.id != m.summaryRequestID {
+			return m, nil
+		}
+		m.summaryLoading = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+		} else {
+			m.counts = msg.counts
+		}
+	case diffMsg:
+		if msg.id == m.requestID && msg.index == m.selected {
+			m.diffLoading = false
+			if msg.err != nil {
+				m.err = msg.err.Error()
+			} else {
+				m.err = ""
+				m.diff = msg.diff
+				m.diffTop = 0
 			}
 		}
+	case editorMsg:
+		if msg.err != nil {
+			m.err = "editor: " + msg.err.Error()
+		} else {
+			m.status = "Returned from editor; refreshing…"
+		}
+		return m, m.queueStatus()
+	case searchMsg:
+		if msg.id != m.searchID {
+			return m, nil
+		}
+		m.searchLoading = false
+		if msg.err != nil {
+			m.err = "search: " + msg.err.Error()
+		} else {
+			m.err = ""
+			m.contentMatches = msg.matches
+			m.selected, m.listTop = 0, 0
+			return m, m.queueDiff()
+		}
+	case tea.KeyMsg:
+		return m.updateKey(msg)
+	case tea.MouseMsg:
+		return m.updateMouse(tea.MouseEvent(msg))
 	}
-	if len(m.rows) == 0 {
-		m.statusMessage = "No file matches."
-	}
+	return m, nil
 }
 
-func (m *Model) applyTextSearch() {
-	opts := m.scanOptions()
-	matches, err := navfs.SearchText(m.cwd, m.filter, m.cfg.PreviewMaxBytes, opts)
-	if err != nil {
-		m.statusMessage = err.Error()
+func (m Model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "ctrl+c" {
+		return m, tea.Quit
 	}
-	m.rows = m.rows[:0]
-	for _, match := range matches {
-		m.rows = append(m.rows, ResultRow{Entry: match.Entry, Line: match.Line, Snippet: match.Snippet})
+	if m.help {
+		if key == "?" || key == "esc" || key == "q" || key == "enter" {
+			m.help = false
+		}
+		return m, nil
 	}
-	if len(m.rows) == 0 && strings.TrimSpace(m.filter) != "" {
-		m.statusMessage = "No text matches."
+	if m.historyOpen {
+		return m.updateHistory(msg)
 	}
+	if m.searching {
+		switch key {
+		case "esc":
+			m.searching = false
+			m.searchQuery = ""
+			m.contentMatches = nil
+			m.selected, m.listTop = 0, 0
+			return m, m.queueDiff()
+		case "enter":
+			m.searching = false
+			return m, m.queueContentSearch()
+		case "backspace", "ctrl+h":
+			runes := []rune(m.searchQuery)
+			if len(runes) > 0 {
+				m.searchQuery = string(runes[:len(runes)-1])
+			}
+			m.resetSearchSelection()
+			return m, m.queueDiff()
+		case "ctrl+u":
+			m.searchQuery = ""
+			m.resetSearchSelection()
+			return m, m.queueDiff()
+		}
+		if msg.Type == tea.KeyRunes {
+			m.searchQuery += string(msg.Runes)
+			m.resetSearchSelection()
+			return m, m.queueDiff()
+		}
+		return m, nil
+	}
+	switch key {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "up", "k":
+		return m.moveSelection(-1)
+	case "down", "j":
+		return m.moveSelection(1)
+	case "J", "shift+down":
+		return m.moveSelection(max(1, m.listHeight()))
+	case "K", "shift+up":
+		return m.moveSelection(-max(1, m.listHeight()))
+	case "ctrl+j", "ctrl+down":
+		m.scrollDiff(max(1, m.diffHeight()-1))
+	case "ctrl+k", "ctrl+up":
+		m.scrollDiff(-max(1, m.diffHeight()-1))
+	case "pgdown":
+		m.scrollDiff(max(1, m.diffHeight()-1))
+	case "pgup":
+		m.scrollDiff(-max(1, m.diffHeight()-1))
+	case "g":
+		m.diffTop = 0
+	case "G":
+		m.diffTop = max(0, m.diffLineCount()-m.diffHeight())
+	case "v":
+		m.sideBySide = !m.sideBySide
+		m.diffTop = 0
+	case "r":
+		return m, m.queueStatus()
+	case "ctrl+o":
+		return m, m.openEditor()
+	case "enter":
+		return m, m.openEditor()
+	case "c":
+		m.historyOpen = true
+		m.historySelected = 0
+		if len(m.history) == 0 {
+			return m, m.queueHistory(false)
+		}
+		return m, nil
+	case "esc":
+		m.mode = 'n'
+		m.fullscreen = 0
+		return m, m.queueNavPreview()
+	case "/":
+		m.searching = true
+		return m, nil
+	case "?":
+		m.help = true
+		return m, nil
+	case "F":
+		if m.fullscreen == 'l' {
+			m.fullscreen = 0
+		} else {
+			m.fullscreen = 'l'
+		}
+		m.clampSelection()
+	case "f":
+		if m.fullscreen == 'r' {
+			m.fullscreen = 0
+		} else {
+			m.fullscreen = 'r'
+		}
+		m.scrollDiff(0)
+	}
+	return m, nil
 }
 
-func (m *Model) ensureRecursiveRows() {
-	if m.recursiveRoot == m.cwd && m.recursiveRows != nil {
-		return
+func (m Model) updateMouse(msg tea.MouseEvent) (tea.Model, tea.Cmd) {
+	if m.historyOpen {
+		return m.updateHistoryMouse(msg)
 	}
-	opts := m.scanOptions()
-	matches, err := navfs.SearchFiles(m.cwd, "", opts)
-	if err != nil {
-		m.statusMessage = err.Error()
+	if m.help {
+		return m, nil
 	}
-	m.recursiveRows = m.recursiveRows[:0]
-	for _, match := range matches {
-		m.recursiveRows = append(m.recursiveRows, ResultRow{Entry: match.Entry})
+	divider := m.leftWidth
+	if m.fullscreen == 0 && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && abs(msg.X-divider) <= 1 {
+		m.dragging = true
+		return m, nil
 	}
-	m.recursiveRoot = m.cwd
-}
-
-func (m *Model) selected() (navfs.FileEntry, bool) {
-	if len(m.rows) == 0 || m.selectedIndex < 0 || m.selectedIndex >= len(m.rows) {
-		return navfs.FileEntry{}, false
+	if m.dragging && msg.Action == tea.MouseActionMotion {
+		m.leftWidth = msg.X
+		m.clampLayout()
+		return m, nil
 	}
-	return m.rows[m.selectedIndex].Entry, true
-}
-
-func (m *Model) selectedRow() (ResultRow, bool) {
-	if len(m.rows) == 0 || m.selectedIndex < 0 || m.selectedIndex >= len(m.rows) {
-		return ResultRow{}, false
+	if msg.Action == tea.MouseActionRelease {
+		m.dragging = false
+		return m, nil
 	}
-	return m.rows[m.selectedIndex], true
-}
-
-func (m *Model) clampSelection() {
-	if len(m.rows) == 0 {
-		m.selectedIndex = 0
-		return
+	searchRow := topHeight + 1
+	listVisible := m.fullscreen != 'r'
+	if listVisible && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && (m.fullscreen == 'l' || msg.X < divider) && msg.Y == searchRow {
+		m.searching = true
+		return m, nil
 	}
-	if m.selectedIndex < 0 {
-		m.selectedIndex = 0
-	}
-	if m.selectedIndex >= len(m.rows) {
-		m.selectedIndex = len(m.rows) - 1
-	}
-}
-
-func (m *Model) selectPath(path string) {
-	for i, row := range m.rows {
-		if row.Entry.Path == path {
-			m.selectedIndex = i
-			return
+	firstFileRow := topHeight + 3
+	if listVisible && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && (m.fullscreen == 'l' || msg.X < divider) && msg.Y >= firstFileRow && msg.Y < firstFileRow+m.listHeight() {
+		index := m.listTop + msg.Y - firstFileRow
+		if index >= 0 && index < len(m.visibleChanges()) {
+			m.searching = false
+			m.selected = index
+			return m, m.queueDiff()
 		}
 	}
+	if msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown {
+		delta := 3
+		if msg.Button == tea.MouseButtonWheelUp {
+			delta = -3
+		}
+		if m.fullscreen == 'l' || (m.fullscreen == 0 && msg.X < divider) {
+			return m.moveSelection(delta)
+		}
+		m.scrollDiff(delta)
+	}
+	return m, nil
+}
+
+func (m Model) moveSelection(delta int) (tea.Model, tea.Cmd) {
+	if len(m.visibleChanges()) == 0 {
+		return m, nil
+	}
+	m.selected += delta
 	m.clampSelection()
+	return m, m.queueDiff()
 }
 
-func (m *Model) refreshPreview() {
-	entry, ok := m.selected()
-	if !ok {
-		m.preview = navfs.Preview{Title: "empty", Content: "No entries."}
-		m.previewViewport.SetContent(m.preview.Content)
-		return
-	}
-	m.preview = navfs.BuildPreviewWithOptions(entry.Path, m.cfg.PreviewMaxBytes, m.scanOptions())
-	if row, ok := m.selectedRow(); ok && row.Line > 0 {
-		m.preview.Content = fmt.Sprintf("line %d: %s\n\n%s", row.Line, row.Snippet, m.preview.Content)
-	}
-	m.previewViewport.SetContent(m.renderPreviewContent())
-	m.previewViewport.GotoTop()
-}
-
-func (m *Model) queuePreview() tea.Cmd {
-	entry, ok := m.selected()
-	if !ok {
-		m.previewRequestID++
-		m.preview = navfs.Preview{Title: "empty", Content: "No entries."}
-		m.previewViewport.SetContent(m.preview.Content)
+func (m *Model) queueDiff() tea.Cmd {
+	changes := m.visibleChanges()
+	if len(changes) == 0 {
+		m.diff = gitview.FileDiff{}
+		m.diffLoading = false
 		return nil
 	}
-	row, _ := m.selectedRow()
-	m.previewRequestID++
-	id := m.previewRequestID
-	path := entry.Path
-	title := entry.Name
-	m.preview = navfs.Preview{Title: title, Path: path, Content: "Loading preview..."}
-	m.previewViewport.SetContent(m.preview.Content)
-	m.previewViewport.GotoTop()
-	return m.previewCmd(id, path, row)
+	m.requestID++
+	m.diffLoading = true
+	m.diffTop = 0
+	return loadDiffRef(m.root, m.diffRef, changes[m.selected], m.requestID, m.selected)
 }
 
-func (m Model) previewCmd(id int, path string, row ResultRow) tea.Cmd {
-	maxBytes := m.cfg.PreviewMaxBytes
-	opts := m.scanOptions()
+func (m *Model) queueContentSearch() tea.Cmd {
+	if m.searchQuery == "" {
+		return m.queueDiff()
+	}
+	m.searchID++
+	m.searchLoading = true
+	id, root, query := m.searchID, m.root, m.searchQuery
+	changes := append([]gitview.Change(nil), m.changes...)
 	return func() tea.Msg {
-		start := perfNow()
-		preview := navfs.BuildPreviewWithOptions(path, maxBytes, opts)
-		if row.Line > 0 {
-			preview.Content = fmt.Sprintf("line %d: %s\n\n%s", row.Line, row.Snippet, preview.Content)
+		var matches map[string]bool
+		var err error
+		if m.diffRef != "" {
+			matches, err = gitview.SearchContentCommit(root, m.diffRef, query, changes)
+		} else {
+			matches, err = gitview.SearchContent(root, query, changes)
 		}
-		content := m.renderPreviewContentFor(preview, path)
-		perfLogDuration("preview.build", start, "path", path)
-		return previewLoadedMsg{id: id, path: path, preview: preview, content: content}
+		return searchMsg{id: id, matches: matches, err: err}
 	}
 }
 
-func (m *Model) applyPreviewLoaded(msg previewLoadedMsg) {
-	if msg.id != m.previewRequestID {
-		return
-	}
-	if entry, ok := m.selected(); !ok || entry.Path != msg.path {
-		return
-	}
-	m.preview = msg.preview
-	m.previewViewport.SetContent(msg.content)
-	m.previewViewport.GotoTop()
+func (m *Model) resetSearchSelection() {
+	m.contentMatches = nil
+	m.searchLoading = false
+	m.searchID++
+	m.selected, m.listTop = 0, 0
 }
 
-func (m *Model) buildTreeRows() []TreeRow {
-	rootInfo, err := os.Stat(m.cwd)
-	if err != nil {
+func (m *Model) queueStatus() tea.Cmd {
+	m.statusRequestID++
+	return loadStatusRef(m.root, m.diffRef, m.statusRequestID)
+}
+
+func (m *Model) scrollDiff(delta int) {
+	m.diffTop += delta
+	maxTop := max(0, m.diffLineCount()-m.diffHeight())
+	if m.diffTop < 0 {
+		m.diffTop = 0
+	}
+	if m.diffTop > maxTop {
+		m.diffTop = maxTop
+	}
+}
+
+func (m Model) openEditor() tea.Cmd {
+	changes := m.visibleChanges()
+	if len(changes) == 0 {
 		return nil
 	}
-	root := navfs.NewEntry(m.cwd, rootInfo)
-	root.Name = filepath.Base(m.cwd)
-	if root.Name == "" {
-		root.Name = m.cwd
+	change := changes[m.selected]
+	args := strings.Fields(m.editor)
+	if len(args) == 0 {
+		args = []string{"nvim"}
 	}
-	rows := []TreeRow{{Entry: root, Depth: 0, Expanded: m.expandedDirs[m.cwd]}}
-	if m.expandedDirs[m.cwd] {
-		rows = m.appendChildren(rows, m.cwd, 1)
-	}
-	return rows
-}
-
-func (m *Model) appendChildren(rows []TreeRow, dir string, depth int) []TreeRow {
-	children, err := navfs.ScanDir(dir, m.scanOptions())
-	if err != nil {
-		return rows
-	}
-	for _, child := range children {
-		expanded := child.IsDir && m.expandedDirs[child.Path]
-		rows = append(rows, TreeRow{Entry: child, Depth: depth, Expanded: expanded})
-		if expanded {
-			rows = m.appendChildren(rows, child.Path, depth+1)
+	path := filepath.Join(m.root, filepath.FromSlash(change.Path))
+	cleanup := ""
+	if change.Kind == gitview.Deleted || m.diffRef != "" {
+		ref := "HEAD"
+		if m.diffRef != "" {
+			ref = m.diffRef
+			if change.Kind == gitview.Deleted {
+				ref += "^"
+			}
 		}
-	}
-	return rows
-}
-
-func (m Model) scanOptions() navfs.ScanOptions {
-	return navfs.ScanOptions{
-		ShowHidden:    m.cfg.ShowHidden,
-		SortDirsFirst: m.cfg.SortDirsFirst,
-		IgnoreNames:   m.ignoreNameSet(),
-	}
-}
-
-func (m Model) ignoreNameSet() map[string]bool {
-	if len(m.cfg.IgnoreNames) == 0 {
-		return nil
-	}
-	ignored := make(map[string]bool, len(m.cfg.IgnoreNames))
-	for _, name := range m.cfg.IgnoreNames {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			ignored[name] = true
+		data, err := exec.Command("git", "-C", m.root, "show", ref+":"+change.Path).Output()
+		if err != nil {
+			return func() tea.Msg { return editorMsg{err: err} }
 		}
-	}
-	return ignored
-}
-
-func (m Model) treeRowsToResultRows(rows []TreeRow) []ResultRow {
-	result := make([]ResultRow, 0, len(rows))
-	for _, row := range rows {
-		result = append(result, ResultRow{Entry: row.Entry, Depth: row.Depth})
-	}
-	return result
-}
-
-func (m Model) rowForPath(path string) (TreeRow, bool) {
-	if m.treeRowByPath != nil {
-		row, ok := m.treeRowByPath[path]
-		return row, ok
-	}
-	for _, row := range m.treeRows {
-		if row.Entry.Path == path {
-			return row, true
+		tmp, err := os.CreateTemp("", "drift-*-"+filepath.Base(change.Path))
+		if err != nil {
+			return func() tea.Msg { return editorMsg{err: err} }
 		}
+		path, cleanup = tmp.Name(), tmp.Name()
+		if _, err = tmp.Write(data); err == nil {
+			err = tmp.Close()
+		} else {
+			_ = tmp.Close()
+		}
+		if err != nil {
+			_ = os.Remove(cleanup)
+			return func() tea.Msg { return editorMsg{err: err} }
+		}
+		args = append(args, "-R")
 	}
-	return TreeRow{}, false
+	cmd := exec.Command(args[0], append(args[1:], path)...)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if cleanup != "" {
+			_ = os.Remove(cleanup)
+		}
+		return editorMsg{err: err}
+	})
 }
 
-func (m *Model) rebuildTreeRowIndex() {
-	if len(m.treeRows) == 0 {
-		m.treeRowByPath = nil
+func (m *Model) clampLayout() {
+	if m.leftWidth == 0 {
+		m.leftWidth = m.width * 30 / 100
+	}
+	if m.width < 64 {
+		m.leftWidth = max(22, m.width/3)
 		return
 	}
-	rows := make(map[string]TreeRow, len(m.treeRows))
-	for _, row := range m.treeRows {
-		rows[row.Entry.Path] = row
+	if m.leftWidth < 24 {
+		m.leftWidth = 24
 	}
-	m.treeRowByPath = rows
-}
-
-func (m *Model) enterMode(mode Mode, prompt, value string) {
-	m.mode = mode
-	m.input = textinput.New()
-	m.input.Prompt = prompt
-	m.input.CharLimit = 512
-	m.input.SetValue(value)
-	m.input.Focus()
-	m.input.CursorEnd()
-}
-
-func (m *Model) exitMode() {
-	m.mode = ModeNormal
-	m.input.Blur()
-}
-
-func (m *Model) setError(err error) {
-	if err != nil {
-		m.statusMessage = err.Error()
+	if m.leftWidth > m.width-40 {
+		m.leftWidth = m.width - 40
 	}
 }
-
-func (m Model) cwdLabel() string {
-	if m.gitRoot != "" {
-		return "[git] " + git.Rel(m.gitRoot, m.cwd)
+func (m *Model) clampSelection() {
+	changes := m.visibleChanges()
+	if len(changes) == 0 {
+		m.selected, m.listTop = 0, 0
+		return
 	}
-	return m.cwd
+	if m.selected < 0 {
+		m.selected = 0
+	}
+	if m.selected >= len(changes) {
+		m.selected = len(changes) - 1
+	}
+	h := max(1, m.listHeight())
+	if m.selected < m.listTop {
+		m.listTop = m.selected
+	}
+	if m.selected >= m.listTop+h {
+		m.listTop = m.selected - h + 1
+	}
 }
-
-func (m Model) selectedPathForStatus() string {
-	entry, ok := m.selected()
-	if !ok {
+func (m Model) selectedPath() string {
+	changes := m.visibleChanges()
+	if len(changes) == 0 || m.selected >= len(changes) {
 		return ""
 	}
-	if m.gitRoot != "" {
-		return git.Rel(m.gitRoot, entry.Path)
-	}
-	return entry.Path
+	return changes[m.selected].Path
 }
-
-func defaultNameForCopy(src, dir string) string {
-	name := filepath.Base(src)
-	dst := filepath.Join(dir, name)
-	if _, err := os.Lstat(dst); os.IsNotExist(err) {
-		return dst
+func (m Model) listHeight() int { return max(3, m.height-10) }
+func (m Model) diffHeight() int { return max(3, m.listHeight()+2) }
+func (m Model) diffLineCount() int {
+	if m.sideBySide {
+		return len(m.diff.Side)
 	}
-	ext := filepath.Ext(name)
-	base := strings.TrimSuffix(name, ext)
-	for i := 1; ; i++ {
-		candidate := filepath.Join(dir, fmt.Sprintf("%s_copy%d%s", base, i, ext))
-		if _, err := os.Lstat(candidate); os.IsNotExist(err) {
-			return candidate
+	return len(m.diff.Lines)
+}
+func indexForPath(changes []gitview.Change, path string, fallback int) int {
+	for i, c := range changes {
+		if c.Path == path {
+			return i
 		}
 	}
+	if fallback >= len(changes) {
+		return max(0, len(changes)-1)
+	}
+	return max(0, fallback)
 }
+
+func (m Model) visibleChanges() []gitview.Change {
+	query := strings.ToLower(m.searchQuery)
+	if query == "" {
+		return m.changes
+	}
+	filtered := make([]gitview.Change, 0, len(m.changes))
+	for _, change := range m.changes {
+		if strings.Contains(strings.ToLower(change.Path), query) || m.contentMatches[change.Path] {
+			filtered = append(filtered, change)
+		}
+	}
+	return filtered
+}
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func (m Model) Debug() string {
+	return fmt.Sprintf("root=%s files=%d selected=%d", m.root, len(m.changes), m.selected)
+}
+func cleanPath(path string) string { return textsafe.Content(strings.ReplaceAll(path, "\t", " ")) }
