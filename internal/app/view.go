@@ -26,8 +26,10 @@ var (
 )
 
 const (
-	topHeight = 6
-	driftLogo = "                  ▀▀       \n" +
+	topHeight         = 6
+	addedBackground   = "\x1b[48;5;22m"
+	removedBackground = "\x1b[48;5;52m"
+	driftLogo         = "                  ▀▀       \n" +
 		"████▄  ▀▀█▄ ██ ██ ██   ▀▀█▄\n" +
 		"██ ██ ▄█▀██ ██▄██ ██  ▄█▀██\n" +
 		"██ ██ ▀█▄██  ▀█▀  ██▄ ▀█▄██"
@@ -274,6 +276,10 @@ func (m Model) renderUnified(width, height int) []string {
 		}
 		row := fit(gutter+text, width)
 		switch line.Kind {
+		case gitview.Added:
+			row = paintDiffRow(row, addedBackground)
+		case gitview.Removed:
+			row = paintDiffRow(row, removedBackground)
 		case gitview.Hunk:
 			row = hunkStyle.Width(width).Render(row)
 		case gitview.Header:
@@ -311,6 +317,12 @@ func (m Model) renderSideBySide(width, height int) []string {
 		}
 		left := fit(fmt.Sprintf("%s %4s │ %s", oldMarker, number(line.Old), old), leftW)
 		right := fit(fmt.Sprintf("%s %4s │ %s", newMarker, number(line.New), new), rightW)
+		if line.OldText != "" && line.Kind == gitview.Removed {
+			left = paintDiffRow(left, removedBackground)
+		}
+		if line.NewText != "" && (line.Kind == gitview.Added || line.Kind == gitview.Removed) {
+			right = paintDiffRow(right, addedBackground)
+		}
 		rows = append(rows, left+dim.Render("│")+right)
 	}
 	return rows
@@ -318,6 +330,13 @@ func (m Model) renderSideBySide(width, height int) []string {
 
 func expandTabs(value string) string {
 	return strings.ReplaceAll(value, "\t", "    ")
+}
+
+func paintDiffRow(value, background string) string {
+	// Chroma resets styling after each syntax token. Reapply the row background
+	// after every reset so token colors remain intact without punching holes in
+	// the added/deleted highlight.
+	return background + strings.ReplaceAll(value, "\x1b[0m", "\x1b[0m"+background) + "\x1b[0m"
 }
 
 func truncateLeft(value string, width int) string {
