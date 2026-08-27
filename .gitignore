@@ -14,3 +14,10 @@ coverage.out
 
 # Local runtime scratch
 .navia-trash/
+
+# Private maintainer scaffolding
+/AGENTS.md
+/CONTRIBUTING.md
+/SECURITY.md
+/.codex/
+/tools/agents/
